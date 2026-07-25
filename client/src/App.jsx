@@ -109,10 +109,6 @@ function App() {
           path="/attendance/register/:slug"
           element={<AttendanceRegister />}
         />
-        <Route
-          path="/teacher/register/:slug"
-          element={<TeacherRegister />}
-        />
         <Route path="/teacher-login" element={<TeacherLogin />} />
         <Route element={<TeacherProtectedRoute />}>
           <Route path="/teacher/dashboard" element={<TeacherRegister />} />

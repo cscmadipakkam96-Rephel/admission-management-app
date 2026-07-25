@@ -35,6 +35,10 @@ const Teacher = sequelize.define(
       type: DataTypes.STRING(150),
       allowNull: true,
     },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     joining_date: {
       type: DataTypes.DATEONLY,
       allowNull: true,

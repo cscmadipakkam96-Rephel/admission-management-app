@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const bcrypt = require("bcryptjs");
 const Teacher = require("../models/Teacher");
 const Course = require("../models/Course");
 require("../models/TeacherCourse");
@@ -17,7 +18,7 @@ const findDuplicateEmail = async (email, excludeId) => {
   return Teacher.findOne({ where });
 };
 
-const validateTeacherPayload = (body) => {
+const validateTeacherPayload = (body, { isCreate }) => {
   const errors = {};
 
   if (!body.teacher_name || !body.teacher_name.trim()) {
@@ -37,6 +38,20 @@ const validateTeacherPayload = (body) => {
     errors.status = "Invalid teacher status.";
   }
 
+  // Login credentials — email + password are how this teacher signs in on
+  // the Teacher Login page, so both are required up front on create. On
+  // edit, a blank password just means "leave it as is" (checked by callers).
+  if (isCreate) {
+    if (!body.email || !body.email.trim()) {
+      errors.email = "Email is required so this teacher can log in.";
+    }
+    if (!body.password || body.password.length < 4) {
+      errors.password = "Password must be at least 4 characters.";
+    }
+  } else if (body.password && body.password.length < 4) {
+    errors.password = "Password must be at least 4 characters.";
+  }
+
   return errors;
 };
 
@@ -52,7 +67,7 @@ const buildPayload = (body) => ({
 
 const createTeacher = async (req, res) => {
   try {
-    const errors = validateTeacherPayload(req.body);
+    const errors = validateTeacherPayload(req.body, { isCreate: true });
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ success: false, errors });
     }
@@ -67,14 +82,19 @@ const createTeacher = async (req, res) => {
       });
     }
 
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
     const teacher = await Teacher.create({
       ...buildPayload(req.body),
+      password: hashedPassword,
+      is_verified: true,
       admin_id: req.admin?.adminId || null,
     });
+    const { password: _password, ...teacherData } = teacher.toJSON();
+    teacherData.has_password = !!_password;
     res.status(201).json({
       success: true,
       message: "Teacher added successfully",
-      data: teacher,
+      data: teacherData,
     });
   } catch (error) {
     res.status(500).json({
@@ -89,12 +109,21 @@ const getAllTeachers = async (req, res) => {
     const isActive = req.query.active !== "false";
     const teachers = await Teacher.findAll({
       where: { active: isActive, admin_id: req.admin.adminId },
+      attributes: { exclude: ["otp", "otp_expires"] },
       include: [{ model: Course, through: { attributes: [] } }],
       order: [["id", "ASC"]],
     });
+    // Never ship the bcrypt hash to the client — just whether one is set,
+    // so admin can see who still needs a password before they can log in.
+    const data = teachers.map((t) => {
+      const json = t.toJSON();
+      json.has_password = !!json.password;
+      delete json.password;
+      return json;
+    });
     res.status(200).json({
       success: true,
-      data: teachers,
+      data,
     });
   } catch (error) {
     res.status(500).json({
@@ -117,7 +146,7 @@ const updateTeacher = async (req, res) => {
       });
     }
 
-    const errors = validateTeacherPayload(req.body);
+    const errors = validateTeacherPayload(req.body, { isCreate: false });
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ success: false, errors });
     }
@@ -132,11 +161,17 @@ const updateTeacher = async (req, res) => {
       });
     }
 
-    await teacher.update(buildPayload(req.body));
+    const updates = buildPayload(req.body);
+    if (req.body.password) {
+      updates.password = await bcrypt.hash(req.body.password, 10);
+    }
+    await teacher.update(updates);
+    const { password: _password, ...teacherData } = teacher.toJSON();
+    teacherData.has_password = !!_password;
     res.status(200).json({
       success: true,
       message: "Teacher updated successfully",
-      data: teacher,
+      data: teacherData,
     });
   } catch (error) {
     res.status(500).json({
@@ -222,6 +257,7 @@ const setTeacherCourses = async (req, res) => {
     }
     await teacher.setCourses(course_ids || []);
     const updated = await Teacher.findByPk(id, {
+      attributes: { exclude: ["password", "otp", "otp_expires"] },
       include: [{ model: Course, through: { attributes: [] } }],
     });
     res.status(200).json({

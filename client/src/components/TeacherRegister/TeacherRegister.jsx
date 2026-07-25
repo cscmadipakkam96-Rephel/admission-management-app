@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useOutletContext } from "react-router-dom";
-import { Modal } from "bootstrap";
+import { useEffect, useState } from "react";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import API from "../../api/api";
 
@@ -65,23 +64,12 @@ const isWithinClassTime = (timing) => {
 };
 
 function TeacherRegister() {
-  const { slug: slugParam } = useParams();
-  const outletContext = useOutletContext();
+  // Reached via the Teacher Login page + cookie session (/teacher/dashboard,
+  // wrapped in TeacherProtectedRoute which already verified the cookie and
+  // hands us the resolved teacher via context).
+  const { teacher_name, slug } = useOutletContext();
   const navigate = useNavigate();
-  // Reached either via a personal secret link (/teacher/register/:slug) or
-  // via the general Teacher Login page + cookie session
-  // (/teacher/dashboard, wrapped in TeacherProtectedRoute which already
-  // verified the cookie and hands us the resolved teacher via context).
-  const isCookieSession = !slugParam;
-  const slug = slugParam || outletContext?.slug;
-  const [loading, setLoading] = useState(true);
-  const [linkError, setLinkError] = useState("");
-  const [person, setPerson] = useState(null);
-  const [step, setStep] = useState("intro");
-  const [otp, setOtp] = useState("");
-  const [maskedEmail, setMaskedEmail] = useState("");
   const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -114,45 +102,6 @@ function TeacherRegister() {
   };
 
   useEffect(() => {
-    if (isCookieSession) {
-      // TeacherProtectedRoute already verified the session cookie and
-      // resolved who this teacher is — skip the link/OTP steps entirely.
-      setPerson({
-        teacher_name: outletContext?.teacher_name,
-        is_verified: true,
-      });
-      setStep("dashboard");
-      setLoading(false);
-      return;
-    }
-    const lookup = async () => {
-      try {
-        const response = await API.get(`/teacher-auth/lookup/${slug}`);
-        setPerson(response.data.data);
-        // is_verified only means "this teacher has onboarded at least
-        // once" — it's a permanent DB flag, not proof this browser is
-        // currently authenticated. Probe the (now session-protected)
-        // dashboard endpoint instead: it only succeeds with a live
-        // teacher_token cookie from an actual OTP verification.
-        try {
-          const dashRes = await API.get(`/teacher-auth/dashboard/${slug}`);
-          setDashboard(dashRes.data.data);
-          setStep("dashboard");
-        } catch {
-          // No valid session yet — stay on the intro step so they OTP-verify.
-        }
-      } catch (err) {
-        setLinkError(err.response?.data?.message || "This link is not valid.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    lookup();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
-
-  useEffect(() => {
-    if (step !== "dashboard") return;
     const loadDashboard = async () => {
       setDashboardLoading(true);
       try {
@@ -169,41 +118,13 @@ function TeacherRegister() {
     API.get(`/teacher-auth/batch-progress/${slug}`)
       .then((res) => setBatchProgress(res.data.data))
       .catch(() => setBatchProgress([]));
-  }, [step, slug]);
+  }, [slug]);
 
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
-
-  const requestOtp = async () => {
-    setError("");
-    setSubmitting(true);
-    try {
-      const response = await API.post("/teacher-auth/request-otp", { slug });
-      setMaskedEmail(response.data.message);
-      setStep("otp");
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to send OTP.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const verifyOtp = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSubmitting(true);
-    try {
-      await API.post("/teacher-auth/verify-otp", { slug, otp });
-      setStep("dashboard");
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to verify OTP.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleTeacherLogout = async () => {
     try {
@@ -212,15 +133,7 @@ function TeacherRegister() {
       // Cookie clearing on the server is best-effort; still proceed either
       // way since staying on the dashboard would be worse.
     }
-    if (isCookieSession) {
-      navigate("/welcome", { replace: true });
-    } else {
-      // Personal slug-link flow — there's no separate login page to send
-      // them to, so just drop back to the OTP prompt on this same page.
-      setDashboard(null);
-      setBatchProgress([]);
-      setStep("intro");
-    }
+    navigate("/teacher-login", { replace: true });
   };
 
   const handleMarkSubjectComplete = async (batchId) => {
@@ -483,96 +396,6 @@ function TeacherRegister() {
     }
   };
 
-  if (loading)
-    return (
-      <div className="text-center p-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
-
-  if (linkError)
-    return (
-      <div
-        className="container-fluid d-flex align-items-center justify-content-center"
-        style={{ minHeight: "100vh", padding: "24px" }}
-      >
-        <div className="card shadow-sm" style={{ maxWidth: "420px" }}>
-          <div className="card-body text-center text-danger">
-            {linkError}
-          </div>
-        </div>
-      </div>
-    );
-
-  if (step !== "dashboard") {
-    return (
-      <div
-        className="container-fluid d-flex align-items-center justify-content-center"
-        style={{ minHeight: "100vh", padding: "24px" }}
-      >
-        <div className="card shadow-sm w-100" style={{ maxWidth: "420px" }}>
-          <div className="card-body text-center">
-            {person && (
-              <>
-                <h4 className="mb-3">Hi, {person.teacher_name}</h4>
-
-                {step === "intro" && (
-                  <>
-                    <p className="text-muted small">
-                      Click below to receive an OTP on your registered email
-                      {person.masked_email ? ` (${person.masked_email})` : ""}
-                      .
-                    </p>
-                    {error && (
-                      <div className="text-danger small mb-3">{error}</div>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-primary w-100"
-                      onClick={requestOtp}
-                      disabled={submitting}
-                    >
-                      {submitting ? "Sending OTP..." : "Send OTP"}
-                    </button>
-                  </>
-                )}
-
-                {step === "otp" && (
-                  <form onSubmit={verifyOtp} className="text-start">
-                    <p className="text-muted small text-center">
-                      {maskedEmail}
-                    </p>
-                    <label className="form-label">Enter OTP</label>
-                    <input
-                      type="text"
-                      className="form-control mb-3"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
-                      placeholder="6-digit OTP"
-                      required
-                    />
-                    {error && (
-                      <div className="text-danger small mb-3">{error}</div>
-                    )}
-                    <button
-                      type="submit"
-                      className="btn btn-primary w-100"
-                      disabled={submitting}
-                    >
-                      {submitting ? "Verifying..." : "Verify OTP"}
-                    </button>
-                  </form>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: "100vh", background: "#f4f6f9" }}>
       {toast && (
@@ -599,7 +422,7 @@ function TeacherRegister() {
           style={{ maxWidth: "900px" }}
         >
           <div>
-            <h3 className="mb-1">{person?.teacher_name}</h3>
+            <h3 className="mb-1">{teacher_name}</h3>
             {dashboard?.teacher?.qualification && (
               <div className="small opacity-75">
                 {dashboard.teacher.qualification}

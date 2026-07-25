@@ -9,6 +9,7 @@ const initialForm = {
   teacher_name: "",
   mobile_no: "",
   email: "",
+  password: "",
   qualification: "",
   joining_date: "",
   salary: "",
@@ -226,6 +227,7 @@ function TeacherManagement() {
       teacher_name: teacher.teacher_name || "",
       mobile_no: teacher.mobile_no || "",
       email: teacher.email || "",
+      password: "",
       qualification: teacher.qualification || "",
       joining_date: teacher.joining_date || "",
       salary: teacher.salary || "",
@@ -262,8 +264,22 @@ function TeacherManagement() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const clientErrors = {};
     if (!formData.teacher_name.trim()) {
-      setFormErrors({ teacher_name: "Teacher Name is required." });
+      clientErrors.teacher_name = "Teacher Name is required.";
+    }
+    if (!editingId) {
+      if (!formData.email.trim()) {
+        clientErrors.email = "Email is required so this teacher can log in.";
+      }
+      if (!formData.password || formData.password.length < 4) {
+        clientErrors.password = "Password must be at least 4 characters.";
+      }
+    } else if (formData.password && formData.password.length < 4) {
+      clientErrors.password = "Password must be at least 4 characters.";
+    }
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors);
       return;
     }
     setSubmitting(true);
@@ -318,19 +334,6 @@ function TeacherManagement() {
   const openViewModal = (teacher) => {
     setViewTeacher(teacher);
     Modal.getOrCreateInstance(viewModalRef.current).show();
-  };
-
-  const copyAttendanceLink = async (teacher) => {
-    const link = `${window.location.origin}/teacher/register/${teacher.slug}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      setToast({
-        variant: "success",
-        message: `Attendance link copied for ${teacher.teacher_name}`,
-      });
-    } catch {
-      setToast({ variant: "danger", message: link });
-    }
   };
 
   const exportToExcel = () => {
@@ -579,14 +582,6 @@ function TeacherManagement() {
                       <td className="d-flex gap-2">
                         <button
                           type="button"
-                          className="btn btn-sm btn-outline-info"
-                          title="Copy Attendance Link"
-                          onClick={() => copyAttendanceLink(t)}
-                        >
-                          <i className="bi bi-link-45deg"></i>
-                        </button>
-                        <button
-                          type="button"
                           className="btn btn-sm btn-outline-secondary"
                           title="View"
                           onClick={() => openViewModal(t)}
@@ -723,10 +718,34 @@ function TeacherManagement() {
                     <input
                       type="email"
                       name="email"
-                      className="form-control"
+                      className={`form-control ${formErrors.email ? "is-invalid" : ""}`}
                       value={formData.email}
                       onChange={handleChange}
                     />
+                    {formErrors.email && (
+                      <div className="invalid-feedback">{formErrors.email}</div>
+                    )}
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">
+                      Password{" "}
+                      <span className="text-muted small fw-normal">
+                        {editingId ? "(leave blank to keep current)" : ""}
+                      </span>
+                    </label>
+                    <input
+                      type="password"
+                      name="password"
+                      className={`form-control ${formErrors.password ? "is-invalid" : ""}`}
+                      value={formData.password}
+                      onChange={handleChange}
+                      placeholder={editingId ? "" : "Used to log in on the Teacher Login page"}
+                    />
+                    {formErrors.password && (
+                      <div className="invalid-feedback">
+                        {formErrors.password}
+                      </div>
+                    )}
                   </div>
                   <div className="col-md-6">
                     <label className="form-label">Qualification</label>
@@ -885,6 +904,23 @@ function TeacherManagement() {
                       <div>{viewTeacher[col.key] || "-"}</div>
                     </div>
                   ))}
+                  <div className="col-md-4">
+                    <div className="text-muted small fw-bold text-uppercase">
+                      Login Password
+                    </div>
+                    <div>
+                      {viewTeacher.has_password ? (
+                        <span className="badge bg-success">
+                          <i className="bi bi-check-lg me-1"></i>Set
+                        </span>
+                      ) : (
+                        <span className="badge bg-warning text-dark">
+                          <i className="bi bi-exclamation-triangle me-1"></i>
+                          Not set — can't log in yet
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <div className="col-12">
                     <div className="text-muted small fw-bold text-uppercase">
                       Courses
