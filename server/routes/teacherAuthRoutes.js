@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const {
+  lookupBySlug,
   getDashboard,
   markBatchAttendance,
   markUnavailableToday,
@@ -11,12 +12,17 @@ const {
   markSubjectComplete,
   unmarkSubjectComplete,
   getBatchTopicSuggestions,
-  cancelBatch,
+  restartBatch,
   login,
   teacherLogout,
   getTeacherMe,
 } = require("../controllers/teacherAuthController");
 const requireTeacherAuth = require("../middleware/teacherAuth");
+
+// Public: personal per-teacher link only pre-fills the login form (name +
+// email) — it never grants access by itself, actual login below still
+// checks the real password.
+router.get("/lookup/:slug", lookupBySlug);
 
 // Everything below reveals a teacher's data or performs an action on their
 // behalf — these require the session cookie login sets, and the controller
@@ -31,7 +37,7 @@ router.get("/batch-progress/:slug", requireTeacherAuth, getBatchProgress);
 router.post("/mark-subject-complete", requireTeacherAuth, markSubjectComplete);
 router.post("/unmark-subject-complete", requireTeacherAuth, unmarkSubjectComplete);
 router.get("/batch-topics/:batchId", requireTeacherAuth, getBatchTopicSuggestions);
-router.post("/cancel-batch", requireTeacherAuth, cancelBatch);
+router.post("/restart-batch", requireTeacherAuth, restartBatch);
 
 // General Teacher Login (email + password, cookie session)
 router.post("/login", login);

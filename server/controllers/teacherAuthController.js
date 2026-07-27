@@ -15,7 +15,6 @@ const BatchSubstitution = require("../models/BatchSubstitution");
 const StudentEntryAttendance = require("../models/StudentEntryAttendance");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS } = require("../utils/sections");
-const { parseTimeRange } = require("../utils/timeRange");
 
 // Which of a batch's students already got credit for `topic` before today
 // (class attendance AND campus entry attendance both true on some earlier
@@ -79,6 +78,31 @@ const clearTeacherAuthCookie = (res) => {
     secure: isProd,
     sameSite: isProd ? "none" : "lax",
   });
+};
+
+// Personal per-teacher link (Teacher Management -> Copy Link): looks up
+// just enough to pre-fill the login form (name + email). No OTP, no
+// session — actually logging in still requires the real password below.
+const lookupBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true },
+      attributes: ["teacher_name", "email"],
+    });
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "This link is not valid",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      data: { teacher_name: teacher.teacher_name, email: teacher.email },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // General Teacher Login: email + password, set by the admin when the
@@ -563,18 +587,6 @@ const startBatch = async (req, res) => {
       return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
     }
 
-    const range = parseTimeRange(batch.timing);
-    if (range) {
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      if (nowMinutes < range.startMinutes || nowMinutes > range.endMinutes) {
-        return res.status(403).json({
-          success: false,
-          message: `You can only start this class during its scheduled time (${batch.timing}). It is not that time right now.`,
-        });
-      }
-    }
-
     const [session] = await BatchSession.findOrCreate({
       where: { batch_id: batch.id, date: todayStr },
       defaults: {
@@ -674,11 +686,13 @@ const endBatch = async (req, res) => {
   }
 };
 
-// Voids today's session when nobody showed up — End Class stays blocked
-// with zero attendance marked, so this is the escape hatch for that case.
-// Refuses once anyone's been marked present (end the class instead) so it
-// can never quietly drop real attendance data.
-const cancelBatch = async (req, res) => {
+// Full undo of today's session for this batch — for when a teacher started
+// class (and maybe marked some students present) by mistake. Wipes today's
+// attendance for this batch AND the session itself (started_at/topic), so
+// the batch goes back to "not started" as if nothing happened. Only
+// available while the class is still running — once ended, use the
+// attendance records normally instead of erasing them.
+const restartBatch = async (req, res) => {
   try {
     const { slug, batch_id } = req.body;
     if (!batch_id) {
@@ -708,22 +722,19 @@ const cancelBatch = async (req, res) => {
       return res.status(400).json({ success: false, message: "This class hasn't been started." });
     }
     if (session.ended_at) {
-      return res.status(400).json({ success: false, message: "This class has already ended." });
-    }
-
-    const presentCount = await Attendance.count({
-      where: { batch_id: batch.id, date: todayStr },
-    });
-    if (presentCount > 0) {
       return res.status(400).json({
         success: false,
-        message: "Attendance has already been marked — end the class instead of cancelling.",
+        message: "This class has already ended — it can't be restarted.",
       });
     }
 
+    await Attendance.destroy({ where: { batch_id: batch.id, date: todayStr } });
     await session.destroy();
 
-    res.status(200).json({ success: true, message: "Class cancelled — nobody was marked present." });
+    res.status(200).json({
+      success: true,
+      message: "Class restarted — today's attendance for this batch was cleared.",
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -883,6 +894,7 @@ const unmarkSubjectComplete = async (req, res) => {
 };
 
 module.exports = {
+  lookupBySlug,
   getDashboard,
   markBatchAttendance,
   markUnavailableToday,
@@ -893,7 +905,7 @@ module.exports = {
   markSubjectComplete,
   unmarkSubjectComplete,
   getBatchTopicSuggestions,
-  cancelBatch,
+  restartBatch,
   login,
   teacherLogout,
   getTeacherMe,

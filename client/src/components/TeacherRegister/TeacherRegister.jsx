@@ -86,7 +86,7 @@ function TeacherRegister() {
   const [batchEndingId, setBatchEndingId] = useState(null);
   const [batchEndingTopicId, setBatchEndingTopicId] = useState(null);
   const [batchTopicInputs, setBatchTopicInputs] = useState({});
-  const [batchCancellingId, setBatchCancellingId] = useState(null);
+  const [batchRestartingId, setBatchRestartingId] = useState(null);
   const [batchTopicPickerId, setBatchTopicPickerId] = useState(null);
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
@@ -369,30 +369,40 @@ function TeacherRegister() {
     }
   };
 
-  const cancelBatch = async (batchId) => {
-    if (!window.confirm("Cancel today's class? Nobody was marked present, so nothing is lost.")) {
+  const restartBatch = async (batchId) => {
+    if (
+      !window.confirm(
+        "Restart this class? Any attendance already marked today for this batch will be cleared, and you'll start fresh."
+      )
+    ) {
       return;
     }
-    setBatchCancellingId(batchId);
+    setBatchRestartingId(batchId);
     try {
-      await API.post("/teacher-auth/cancel-batch", { slug, batch_id: batchId });
+      await API.post("/teacher-auth/restart-batch", { slug, batch_id: batchId });
       setDashboard((prev) => ({
         ...prev,
         todayBatches: prev.todayBatches.map((b) =>
           b.id === batchId
-            ? { ...b, started_at: null, ended_at: null, topic_covered: null }
+            ? {
+                ...b,
+                started_at: null,
+                ended_at: null,
+                topic_covered: null,
+                students: b.students.map((s) => ({ ...s, already_present: false })),
+              }
             : b
         ),
       }));
       setExpandedBatchId((prev) => (prev === batchId ? null : prev));
-      setToast({ variant: "success", message: "Class cancelled." });
+      setToast({ variant: "success", message: "Class restarted." });
     } catch (err) {
       setToast({
         variant: "danger",
-        message: err.response?.data?.message || "Failed to cancel class.",
+        message: err.response?.data?.message || "Failed to restart class.",
       });
     } finally {
-      setBatchCancellingId(null);
+      setBatchRestartingId(null);
     }
   };
 
@@ -646,19 +656,17 @@ function TeacherRegister() {
                                         >
                                           {batchEndingId === b.id ? "Ending..." : "End Class"}
                                         </button>
-                                        {!canEnd && (
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-outline-secondary"
-                                            disabled={batchCancellingId === b.id}
-                                            title="Nobody has shown up — cancel today's class instead."
-                                            onClick={() => cancelBatch(b.id)}
-                                          >
-                                            {batchCancellingId === b.id
-                                              ? "Cancelling..."
-                                              : "Cancel Class"}
-                                          </button>
-                                        )}
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-secondary"
+                                          disabled={batchRestartingId === b.id}
+                                          title="Undo this class — clears any attendance marked today and lets you start over."
+                                          onClick={() => restartBatch(b.id)}
+                                        >
+                                          {batchRestartingId === b.id
+                                            ? "Restarting..."
+                                            : "Restart Class"}
+                                        </button>
                                       </>
                                     );
                                   })()}

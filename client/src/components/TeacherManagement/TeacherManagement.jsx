@@ -336,6 +336,19 @@ function TeacherManagement() {
     Modal.getOrCreateInstance(viewModalRef.current).show();
   };
 
+  const copyLoginLink = async (teacher) => {
+    const link = `${window.location.origin}/teacher-login/${teacher.slug}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setToast({
+        variant: "success",
+        message: `Login link copied for ${teacher.teacher_name}`,
+      });
+    } catch {
+      setToast({ variant: "danger", message: link });
+    }
+  };
+
   const exportToExcel = () => {
     const data = sortedTeachers.map((t) => {
       const record = {};
@@ -580,6 +593,14 @@ function TeacherManagement() {
                         </span>
                       </td>
                       <td className="d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-info"
+                          title="Copy Login Link"
+                          onClick={() => copyLoginLink(t)}
+                        >
+                          <i className="bi bi-link-45deg"></i>
+                        </button>
                         <button
                           type="button"
                           className="btn btn-sm btn-outline-secondary"

@@ -110,6 +110,7 @@ function App() {
           element={<AttendanceRegister />}
         />
         <Route path="/teacher-login" element={<TeacherLogin />} />
+        <Route path="/teacher-login/:slug" element={<TeacherLogin />} />
         <Route element={<TeacherProtectedRoute />}>
           <Route path="/teacher/dashboard" element={<TeacherRegister />} />
         </Route>
