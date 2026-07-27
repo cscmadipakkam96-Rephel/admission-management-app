@@ -91,6 +91,14 @@ function TeacherRegister() {
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
   const [expandedSubjectIds, setExpandedSubjectIds] = useState(() => new Set());
+  // "Forgot Class" — backfill/edit a session with an explicit date/time
+  // instead of the live Start/End Class flow. sessionId null = adding a
+  // new missed class; sessionId set = editing that existing entry.
+  const [sessionForm, setSessionForm] = useState(null);
+  const [sessionFormSubmitting, setSessionFormSubmitting] = useState(false);
+  const [sessionFormError, setSessionFormError] = useState("");
+  const [oldTopicOptions, setOldTopicOptions] = useState([]);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
 
   const toggleSubject = (id) => {
     setExpandedSubjectIds((prev) => {
@@ -403,6 +411,322 @@ function TeacherRegister() {
       });
     } finally {
       setBatchRestartingId(null);
+    }
+  };
+
+  const toLocalTimeInput = (isoString) => {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
+  const fetchOldTopicOptions = async (batchId) => {
+    try {
+      const response = await API.get(`/teacher-auth/batch-topics/${batchId}`);
+      setOldTopicOptions(response.data.data || []);
+    } catch {
+      setOldTopicOptions([]);
+    }
+  };
+
+  const openAddSessionForm = (batchId) => {
+    setSessionFormError("");
+    setSessionForm({
+      batchId,
+      sessionId: null,
+      date: new Date().toISOString().slice(0, 10),
+      start_time: "",
+      end_time: "",
+      topic_covered: "",
+      attendance: {},
+    });
+    fetchOldTopicOptions(batchId);
+  };
+
+  const openEditSessionForm = (batchId, session) => {
+    setSessionFormError("");
+    const startTime = toLocalTimeInput(session.started_at);
+    const endTime = toLocalTimeInput(session.ended_at);
+    const attendance = {};
+    session.present.forEach((s) => {
+      attendance[s.id] = {
+        present: true,
+        in_time: s.in_time || startTime,
+        out_time: s.out_time || endTime,
+      };
+    });
+    session.absent.forEach((s) => {
+      attendance[s.id] = { present: false, in_time: "", out_time: "" };
+    });
+    setSessionForm({
+      batchId,
+      sessionId: session.id,
+      date: session.date,
+      start_time: startTime,
+      end_time: endTime,
+      topic_covered: session.topic_covered || "",
+      attendance,
+    });
+    fetchOldTopicOptions(batchId);
+  };
+
+  const closeSessionForm = () => {
+    setSessionForm(null);
+    setSessionFormError("");
+  };
+
+  // Checking a student in defaults their in/out time to the class's own
+  // start/end time — convenient when everyone arrived on time, but each
+  // student's times stay independently editable for anyone who didn't.
+  const toggleSessionPresentId = (id) => {
+    setSessionForm((prev) => {
+      const current = prev.attendance[id];
+      const attendance = { ...prev.attendance };
+      if (current?.present) {
+        attendance[id] = { present: false, in_time: "", out_time: "" };
+      } else {
+        attendance[id] = {
+          present: true,
+          in_time: current?.in_time || prev.start_time,
+          out_time: current?.out_time || prev.end_time,
+        };
+      }
+      return { ...prev, attendance };
+    });
+  };
+
+  const updateSessionStudentTime = (id, field, value) => {
+    setSessionForm((prev) => ({
+      ...prev,
+      attendance: {
+        ...prev.attendance,
+        [id]: { ...prev.attendance[id], [field]: value },
+      },
+    }));
+  };
+
+  const refreshBatchProgress = async () => {
+    try {
+      const response = await API.get(`/teacher-auth/batch-progress/${slug}`);
+      setBatchProgress(response.data.data);
+    } catch {
+      // Keep whatever's already on screen if the refresh itself fails.
+    }
+  };
+
+  const submitSessionForm = async () => {
+    if (!sessionForm) return;
+    const { batchId, sessionId, date, start_time, end_time, topic_covered, attendance } = sessionForm;
+    if (!date || !start_time || !end_time || !topic_covered.trim()) {
+      setSessionFormError("Date, start time, end time and topic are all required.");
+      return;
+    }
+    setSessionFormSubmitting(true);
+    setSessionFormError("");
+    try {
+      const presentStudents = Object.entries(attendance)
+        .filter(([, v]) => v.present)
+        .map(([admission_id, v]) => ({
+          admission_id: Number(admission_id),
+          in_time: v.in_time || null,
+          out_time: v.out_time || null,
+        }));
+      const payload = {
+        date,
+        start_time,
+        end_time,
+        topic_covered: topic_covered.trim(),
+        present_students: presentStudents,
+      };
+      if (sessionId) {
+        await API.put(`/teacher-auth/session/${sessionId}`, payload);
+      } else {
+        await API.post("/teacher-auth/session/add", { batch_id: batchId, ...payload });
+      }
+      closeSessionForm();
+      await refreshBatchProgress();
+      setToast({ variant: "success", message: sessionId ? "Class updated." : "Class added." });
+    } catch (err) {
+      setSessionFormError(err.response?.data?.message || "Failed to save.");
+    } finally {
+      setSessionFormSubmitting(false);
+    }
+  };
+
+  const renderSessionFormPanel = (studentsForBatch) => {
+    if (!sessionForm) return null;
+    return (
+      <div className="border rounded p-3 mb-2 bg-light">
+        <div className="row g-2">
+          <div className="col-md-3">
+            <label className="form-label small mb-1">Date</label>
+            <input
+              type="date"
+              className="form-control form-control-sm"
+              max={new Date().toISOString().slice(0, 10)}
+              value={sessionForm.date}
+              onChange={(e) =>
+                setSessionForm((prev) => ({ ...prev, date: e.target.value }))
+              }
+            />
+          </div>
+          <div className="col-md-3">
+            <label className="form-label small mb-1">Start Time</label>
+            <input
+              type="time"
+              className="form-control form-control-sm"
+              value={sessionForm.start_time}
+              onChange={(e) =>
+                setSessionForm((prev) => ({ ...prev, start_time: e.target.value }))
+              }
+            />
+          </div>
+          <div className="col-md-3">
+            <label className="form-label small mb-1">End Time</label>
+            <input
+              type="time"
+              className="form-control form-control-sm"
+              value={sessionForm.end_time}
+              onChange={(e) =>
+                setSessionForm((prev) => ({ ...prev, end_time: e.target.value }))
+              }
+            />
+          </div>
+          <div className="col-md-3">
+            <label className="form-label small mb-1">Use an already-covered topic</label>
+            <select
+              className="form-select form-select-sm"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSessionForm((prev) => ({ ...prev, topic_covered: e.target.value }));
+                }
+              }}
+            >
+              <option value="">— pick one (optional) —</option>
+              {oldTopicOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-12">
+            <label className="form-label small mb-1">Topic Covered</label>
+            <input
+              type="text"
+              className="form-control form-control-sm"
+              placeholder="Type a topic, or pick one above"
+              value={sessionForm.topic_covered}
+              onChange={(e) =>
+                setSessionForm((prev) => ({ ...prev, topic_covered: e.target.value }))
+              }
+            />
+          </div>
+          <div className="col-12">
+            <label className="form-label small mb-1 d-block">
+              Who was present? (with their own in/out time)
+            </label>
+            {studentsForBatch.length === 0 ? (
+              <div className="text-muted small">No students in this batch.</div>
+            ) : (
+              studentsForBatch.map((st) => {
+                const entry = sessionForm.attendance[st.id];
+                const isPresent = !!entry?.present;
+                return (
+                  <div
+                    key={st.id}
+                    className="d-flex align-items-center flex-wrap gap-2 border-bottom py-1"
+                  >
+                    <div className="form-check" style={{ minWidth: "160px" }}>
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        checked={isPresent}
+                        onChange={() => toggleSessionPresentId(st.id)}
+                      />
+                      <label className="form-check-label small">
+                        {st.applicant_name}
+                      </label>
+                    </div>
+                    {isPresent && (
+                      <>
+                        <div className="d-flex align-items-center gap-1">
+                          <label className="small text-muted mb-0">In</label>
+                          <input
+                            type="time"
+                            className="form-control form-control-sm"
+                            style={{ width: "120px" }}
+                            value={entry.in_time}
+                            onChange={(e) =>
+                              updateSessionStudentTime(st.id, "in_time", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="d-flex align-items-center gap-1">
+                          <label className="small text-muted mb-0">Out</label>
+                          <input
+                            type="time"
+                            className="form-control form-control-sm"
+                            style={{ width: "120px" }}
+                            value={entry.out_time}
+                            onChange={(e) =>
+                              updateSessionStudentTime(st.id, "out_time", e.target.value)
+                            }
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {sessionFormError && (
+            <div className="col-12">
+              <div className="text-danger small">{sessionFormError}</div>
+            </div>
+          )}
+          <div className="col-12 d-flex gap-2">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={sessionFormSubmitting}
+              onClick={submitSessionForm}
+            >
+              {sessionFormSubmitting
+                ? "Saving..."
+                : sessionForm.sessionId
+                  ? "Save Changes"
+                  : "Add Class"}
+            </button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={closeSessionForm}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const handleDeleteSession = async (sessionId) => {
+    if (!window.confirm("Delete this class entry? This removes its attendance record too.")) {
+      return;
+    }
+    setDeletingSessionId(sessionId);
+    try {
+      await API.delete(`/teacher-auth/session/${sessionId}`);
+      await refreshBatchProgress();
+      setToast({ variant: "success", message: "Class entry deleted." });
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.response?.data?.message || "Failed to delete.",
+      });
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -1002,9 +1326,28 @@ function TeacherRegister() {
                                   </button>
                                 )}
                               </div>
-                              <div className="fw-semibold small mb-2">
-                                Covered Topics ({bp.sessions.length})
+                              <div className="d-flex justify-content-between align-items-center mb-2">
+                                <div className="fw-semibold small">
+                                  Covered Topics ({bp.sessions.length})
+                                </div>
+                                {!(sessionForm && sessionForm.batchId === bp.id && !sessionForm.sessionId) && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openAddSessionForm(bp.id);
+                                    }}
+                                  >
+                                    <i className="bi bi-clock-history me-1"></i>
+                                    Forgot Class
+                                  </button>
+                                )}
                               </div>
+                              {sessionForm &&
+                                sessionForm.batchId === bp.id &&
+                                !sessionForm.sessionId &&
+                                renderSessionFormPanel(bp.students)}
                               {bp.sessions.length === 0 ? (
                                 <div className="text-muted small">
                                   No topics recorded for this batch yet.
@@ -1013,6 +1356,15 @@ function TeacherRegister() {
                                 bp.sessions.map((s) => {
                                   const sessionKey = `${bp.id}-${s.date}`;
                                   const isSessionOpen = expandedSessionKey === sessionKey;
+                                  const isEditingThis =
+                                    sessionForm && sessionForm.sessionId === s.id;
+                                  if (isEditingThis) {
+                                    return (
+                                      <div key={sessionKey} className="mb-2">
+                                        {renderSessionFormPanel(bp.students)}
+                                      </div>
+                                    );
+                                  }
                                   return (
                                     <div
                                       key={sessionKey}
@@ -1040,6 +1392,29 @@ function TeacherRegister() {
                                           <span className="badge bg-danger">
                                             {s.absentCount} absent
                                           </span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-primary py-0 px-1"
+                                            title="Edit this class"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openEditSessionForm(bp.id, s);
+                                            }}
+                                          >
+                                            <i className="bi bi-pencil"></i>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-danger py-0 px-1"
+                                            title="Delete this class"
+                                            disabled={deletingSessionId === s.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteSession(s.id);
+                                            }}
+                                          >
+                                            <i className="bi bi-trash"></i>
+                                          </button>
                                           <i
                                             className={`bi ${isSessionOpen ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}
                                           ></i>

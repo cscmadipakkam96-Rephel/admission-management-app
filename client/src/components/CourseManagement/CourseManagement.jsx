@@ -306,6 +306,16 @@ function CourseManagement() {
     setSelectedSubjectIds([]);
     setSubjectSearchTerm("");
     Modal.getOrCreateInstance(modalRef.current).show();
+
+    // Pre-fill Course Code with the next number in sequence so admin
+    // doesn't have to type it — still editable if they want a different one.
+    API.get("/courses/next-code")
+      .then((response) => {
+        setFormData((prev) => ({ ...prev, course_code: response.data.data.next_code }));
+      })
+      .catch(() => {
+        // Non-critical — admin can still type the code manually.
+      });
   };
 
   const openEditModal = (course) => {

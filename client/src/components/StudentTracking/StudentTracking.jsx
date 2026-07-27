@@ -173,6 +173,12 @@ function StudentTracking() {
                                       <div key={t.date} className="small">
                                         <span className="text-muted">{t.date}</span> —{" "}
                                         {t.topic_covered}
+                                        {(t.in_time || t.out_time) && (
+                                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                                            <i className="bi bi-clock me-1"></i>
+                                            In: {t.in_time || "-"} — Out: {t.out_time || "-"}
+                                          </div>
+                                        )}
                                       </div>
                                     ))
                                   )}
@@ -188,6 +194,12 @@ function StudentTracking() {
                                       <div key={t.date} className="small">
                                         <span className="text-muted">{t.date}</span> —{" "}
                                         {t.topic_covered}
+                                        {(t.in_time || t.out_time) && (
+                                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                                            <i className="bi bi-clock me-1"></i>
+                                            In: {t.in_time || "-"} — Out: {t.out_time || "-"}
+                                          </div>
+                                        )}
                                         <div className="text-muted" style={{ fontSize: "0.75rem" }}>
                                           {t.reason}
                                         </div>

@@ -23,6 +23,10 @@ const Admission = sequelize.define(
       type: DataTypes.STRING(50),
       allowNull: true,
     },
+    // "Common Enrol No" (M09 + month-letter + year + running serial) is NOT
+    // stored here — it depends on this admission's rank among every other
+    // admission by admission_date, which a single-row virtual can't compute.
+    // See server/utils/commonEnrolNo.js, applied in admissionController.js.
     course_name: {
       type: DataTypes.STRING(100),
       allowNull: true,

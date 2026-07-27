@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   createCourse,
+  getNextCourseCode,
   getAllCourses,
   updateCourse,
   deleteCourse,
@@ -10,6 +11,7 @@ const {
 } = require("../controllers/courseController");
 
 router.get("/", getAllCourses);
+router.get("/next-code", getNextCourseCode);
 router.post("/", createCourse);
 router.put("/:id", updateCourse);
 router.delete("/:id", deleteCourse);

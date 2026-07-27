@@ -13,6 +13,7 @@ import "./List.css";
 
 const EXPORT_COLUMNS = [
   { key: "comn_enrol_no", label: "Enrol No" },
+  { key: "common_enrol_no", label: "Common Enrol No" },
   { key: "course_name", label: "Course" },
   { key: "session", label: "Session" },
   { key: "applicant_name", label: "Name" },
@@ -368,13 +369,14 @@ function List() {
                   {col.label} <i className={`bi ${sortIcon(col.key)}`}></i>
                 </th>
               ))}
+              <th>Common Enrol No</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {paginatedAdmissions.length === 0 ? (
               <tr>
-                <td className="list-status" colSpan={7}>
+                <td className="list-status" colSpan={8}>
                   No admission records found.
                 </td>
               </tr>
@@ -387,6 +389,7 @@ function List() {
                   <td>{row.course_name}</td>
                   <td>{row.mobile_no}</td>
                   <td>{formatDateTime(row.created_at)}</td>
+                  <td>{row.common_enrol_no || "-"}</td>
                   <td className="d-flex gap-2">
                     <button
                       className="btn btn-sm btn-outline-warning"

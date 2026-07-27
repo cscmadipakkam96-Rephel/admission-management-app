@@ -9,6 +9,9 @@ const {
   startBatch,
   endBatch,
   getBatchProgress,
+  addPastSession,
+  editSession,
+  deleteSession,
   markSubjectComplete,
   unmarkSubjectComplete,
   getBatchTopicSuggestions,
@@ -34,6 +37,9 @@ router.post("/mark-available", requireTeacherAuth, markAvailableToday);
 router.post("/start-batch", requireTeacherAuth, startBatch);
 router.post("/end-batch", requireTeacherAuth, endBatch);
 router.get("/batch-progress/:slug", requireTeacherAuth, getBatchProgress);
+router.post("/session/add", requireTeacherAuth, addPastSession);
+router.put("/session/:sessionId", requireTeacherAuth, editSession);
+router.delete("/session/:sessionId", requireTeacherAuth, deleteSession);
 router.post("/mark-subject-complete", requireTeacherAuth, markSubjectComplete);
 router.post("/unmark-subject-complete", requireTeacherAuth, unmarkSubjectComplete);
 router.get("/batch-topics/:batchId", requireTeacherAuth, getBatchTopicSuggestions);

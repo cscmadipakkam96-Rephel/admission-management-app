@@ -637,19 +637,24 @@ const getStudentTracking = async (req, res) => {
     batches.forEach((b) => {
       const batchSessions = sessions.filter((s) => s.batch_id === b.id);
       (b.Students || []).forEach((student) => {
-        const presentDates = new Set(
+        const attendanceByDate = new Map(
           classAttendance
             .filter((a) => a.batch_id === b.id && a.admission_id === student.id)
-            .map((a) => a.date)
+            .map((a) => [a.date, a])
         );
         const entryDates = entryDatesByAdmission.get(student.id) || new Set();
 
         const completedTopics = [];
         const missedTopics = [];
         batchSessions.forEach((s) => {
-          const hasClassAttendance = presentDates.has(s.date);
+          const hasClassAttendance = attendanceByDate.has(s.date);
           const hasEntryAttendance = entryDates.has(s.date);
-          const topic = { date: s.date, topic_covered: s.topic_covered };
+          const topic = {
+            date: s.date,
+            topic_covered: s.topic_covered,
+            in_time: attendanceByDate.get(s.date)?.in_time || null,
+            out_time: attendanceByDate.get(s.date)?.out_time || null,
+          };
           if (hasClassAttendance && hasEntryAttendance) {
             completedTopics.push(topic);
           } else {

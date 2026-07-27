@@ -1,6 +1,24 @@
 const Admission = require("../models/Admission");
 const FeePayment = require("../models/FeePayment");
 const { calculateAge } = require("../utils/age");
+const { buildCommonEnrolNoMap } = require("../utils/commonEnrolNo");
+
+// Common Enrol No ranks an admission among every active admission for this
+// admin — always computed against the full active roster, regardless of
+// what subset the caller is displaying, so the number stays stable no
+// matter which page/filter you're looking at it from.
+const attachCommonEnrolNo = async (adminId, admissions) => {
+  const roster = await Admission.findAll({
+    where: { active: true, admin_id: adminId },
+    attributes: ["id", "admission_date", "created_at", "comn_enrol_no"],
+  });
+  const enrolMap = buildCommonEnrolNoMap(roster);
+  return admissions.map((a) => {
+    const json = a.toJSON();
+    json.common_enrol_no = enrolMap.get(a.id) || null;
+    return json;
+  });
+};
 
 const NULLABLE_IF_EMPTY_FIELDS = [
   "aadhar_no",
@@ -47,10 +65,11 @@ const createAdmission = async (req, res) => {
       ...payload,
       admin_id: req.admin?.adminId || null,
     });
+    const [data] = await attachCommonEnrolNo(req.admin.adminId, [admission]);
     res.status(201).json({
       success: true,
       message: "Admission submitted successfully",
-      data: admission,
+      data,
     });
   } catch (error) {
     if (error.name === "SequelizeUniqueConstraintError") {
@@ -75,9 +94,10 @@ const getAllAdmissions = async (req, res) => {
       include: [{ model: FeePayment }],
       order: [["id", "ASC"]],
     });
+    const data = await attachCommonEnrolNo(req.admin.adminId, admissions);
     res.status(200).json({
       success: true,
-      data: admissions,
+      data,
     });
   } catch (error) {
     res.status(500).json({
@@ -100,9 +120,10 @@ const getAdmissionById = async (req, res) => {
         message: "Admission not found",
       });
     }
+    const [data] = await attachCommonEnrolNo(req.admin.adminId, [admission]);
     res.status(200).json({
       success: true,
-      data: admission,
+      data,
     });
   } catch (error) {
     res.status(500).json({
@@ -126,10 +147,11 @@ const updateAdmission = async (req, res) => {
     }
     const payload = sanitizePayload(req.body);
     await admission.update(payload);
+    const [data] = await attachCommonEnrolNo(req.admin.adminId, [admission]);
     res.status(200).json({
       success: true,
       message: "Admission updated successfully",
-      data: admission,
+      data,
     });
   } catch (error) {
     res.status(500).json({

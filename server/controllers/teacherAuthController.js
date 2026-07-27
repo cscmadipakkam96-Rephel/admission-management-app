@@ -803,15 +803,24 @@ const getBatchProgress = async (req, res) => {
       }));
       const batchSessions = sessions.filter((s) => s.batch_id === b.id);
       const sessionDetails = batchSessions.map((s) => {
-        const presentIds = new Set(
+        const attendanceByStudent = new Map(
           attendanceRows
             .filter((a) => a.batch_id === b.id && a.date === s.date)
-            .map((a) => a.admission_id)
+            .map((a) => [a.admission_id, a])
         );
-        const present = students.filter((st) => presentIds.has(st.id));
-        const absent = students.filter((st) => !presentIds.has(st.id));
+        const present = students
+          .filter((st) => attendanceByStudent.has(st.id))
+          .map((st) => ({
+            ...st,
+            in_time: attendanceByStudent.get(st.id).in_time,
+            out_time: attendanceByStudent.get(st.id).out_time,
+          }));
+        const absent = students.filter((st) => !attendanceByStudent.has(st.id));
         return {
+          id: s.id,
           date: s.date,
+          started_at: s.started_at,
+          ended_at: s.ended_at,
           topic_covered: s.topic_covered,
           present,
           absent,
@@ -844,6 +853,190 @@ const getBatchProgress = async (req, res) => {
     });
 
     res.status(200).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const validateSessionInput = (body) => {
+  const { date, start_time, end_time, topic_covered } = body;
+  if (!date || !start_time || !end_time || !topic_covered || !topic_covered.trim()) {
+    return "Date, start time, end time and topic are all required.";
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (date > todayStr) {
+    return "Date can't be in the future.";
+  }
+  const startedAt = new Date(`${date}T${start_time}`);
+  const endedAt = new Date(`${date}T${end_time}`);
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+    return "Invalid start or end time.";
+  }
+  if (endedAt <= startedAt) {
+    return "End time must be after start time.";
+  }
+  return null;
+};
+
+// "Forgot Class" — backfill a class the teacher never tracked live (missed
+// clicking Start/End that day). Independent of the live Start/End Class
+// flow above: takes an explicit date + start/end time + topic + who was
+// present, instead of capturing "now".
+const addPastSession = async (req, res) => {
+  try {
+    const { batch_id, date, start_time, end_time, topic_covered, present_students } = req.body;
+    if (!batch_id) {
+      return res.status(400).json({ success: false, message: "Batch is required." });
+    }
+    const validationError = validateSessionInput(req.body);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
+
+    const batch = await Batch.findOne({
+      where: { id: batch_id, teacher_id: req.teacher.teacherId, active: true },
+      include: [{ model: Admission, as: "Students", through: { attributes: [] } }],
+    });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+
+    const existing = await BatchSession.findOne({ where: { batch_id: batch.id, date } });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "A class is already recorded for this batch on that date — edit it instead.",
+      });
+    }
+
+    const session = await BatchSession.create({
+      batch_id: batch.id,
+      date,
+      teacher_id: req.teacher.teacherId,
+      started_at: new Date(`${date}T${start_time}`),
+      ended_at: new Date(`${date}T${end_time}`),
+      topic_covered: topic_covered.trim(),
+    });
+
+    const allowedIds = new Set((batch.Students || []).map((s) => s.id));
+    const presentRows = (present_students || [])
+      .filter((p) => allowedIds.has(Number(p.admission_id)))
+      .map((p) => ({
+        admission_id: Number(p.admission_id),
+        date,
+        batch_id: batch.id,
+        status: "Present",
+        in_time: p.in_time || null,
+        out_time: p.out_time || null,
+      }));
+    if (presentRows.length) {
+      await Attendance.bulkCreate(presentRows);
+    }
+
+    res.status(201).json({ success: true, message: "Class added.", data: { session_id: session.id } });
+  } catch (error) {
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        success: false,
+        message: "A class is already recorded for this batch on that date — edit it instead.",
+      });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Edits an existing session entry (whether it came from the live Start/End
+// flow or was itself backfilled via addPastSession) — date, times, topic
+// and who was present are all replaced with what's submitted here.
+const editSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { date, present_students } = req.body;
+    const validationError = validateSessionInput(req.body);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
+
+    const session = await BatchSession.findByPk(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Class entry not found." });
+    }
+    const batch = await Batch.findOne({
+      where: { id: session.batch_id, teacher_id: req.teacher.teacherId, active: true },
+      include: [{ model: Admission, as: "Students", through: { attributes: [] } }],
+    });
+    if (!batch) {
+      return res.status(403).json({ success: false, message: "This class doesn't belong to you." });
+    }
+
+    if (date !== session.date) {
+      const clash = await BatchSession.findOne({
+        where: { batch_id: batch.id, date, id: { [Op.ne]: session.id } },
+      });
+      if (clash) {
+        return res.status(409).json({
+          success: false,
+          message: "A class is already recorded for this batch on that date.",
+        });
+      }
+    }
+
+    // Attendance rows are keyed off the session's date — always re-derive
+    // from what's submitted rather than trying to diff the old list.
+    await Attendance.destroy({ where: { batch_id: batch.id, date: session.date } });
+
+    const allowedIds = new Set((batch.Students || []).map((s) => s.id));
+    const presentRows = (present_students || [])
+      .filter((p) => allowedIds.has(Number(p.admission_id)))
+      .map((p) => ({
+        admission_id: Number(p.admission_id),
+        date,
+        batch_id: batch.id,
+        status: "Present",
+        in_time: p.in_time || null,
+        out_time: p.out_time || null,
+      }));
+    if (presentRows.length) {
+      await Attendance.bulkCreate(presentRows);
+    }
+
+    await session.update({
+      date,
+      started_at: new Date(`${date}T${req.body.start_time}`),
+      ended_at: new Date(`${date}T${req.body.end_time}`),
+      topic_covered: req.body.topic_covered.trim(),
+    });
+
+    res.status(200).json({ success: true, message: "Class updated." });
+  } catch (error) {
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        success: false,
+        message: "A class is already recorded for this batch on that date.",
+      });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await BatchSession.findByPk(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Class entry not found." });
+    }
+    const batch = await Batch.findOne({
+      where: { id: session.batch_id, teacher_id: req.teacher.teacherId, active: true },
+    });
+    if (!batch) {
+      return res.status(403).json({ success: false, message: "This class doesn't belong to you." });
+    }
+
+    await Attendance.destroy({ where: { batch_id: batch.id, date: session.date } });
+    await session.destroy();
+
+    res.status(200).json({ success: true, message: "Class entry deleted." });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -902,6 +1095,9 @@ module.exports = {
   startBatch,
   endBatch,
   getBatchProgress,
+  addPastSession,
+  editSession,
+  deleteSession,
   markSubjectComplete,
   unmarkSubjectComplete,
   getBatchTopicSuggestions,

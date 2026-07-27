@@ -109,6 +109,31 @@ const createCourse = async (req, res) => {
   }
 };
 
+// Course codes are plain sequential numbers ("101", "102", ...). Looks at
+// every course for this admin — active AND inactive — so a re-used code
+// never collides with one a soft-deleted course still holds.
+const getNextCourseCode = async (req, res) => {
+  try {
+    const courses = await Course.findAll({
+      where: { admin_id: req.admin.adminId },
+      attributes: ["course_code"],
+    });
+    const numericCodes = courses
+      .map((c) => parseInt(c.course_code, 10))
+      .filter((n) => Number.isFinite(n));
+    const nextCode = numericCodes.length ? Math.max(...numericCodes) + 1 : 101;
+    res.status(200).json({
+      success: true,
+      data: { next_code: String(nextCode) },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const getAllCourses = async (req, res) => {
   try {
     const isActive = req.query.active !== "false";
@@ -278,6 +303,7 @@ const restoreCourse = async (req, res) => {
 
 module.exports = {
   createCourse,
+  getNextCourseCode,
   getAllCourses,
   updateCourse,
   deleteCourse,

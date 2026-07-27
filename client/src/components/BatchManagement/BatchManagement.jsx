@@ -24,6 +24,61 @@ const MINUTES = Array.from({ length: 12 }, (_, i) =>
   String(i * 5).padStart(2, "0")
 );
 
+const SECTION_SHORT = {
+  fast_track: "FT",
+  normal_mwf: "NT-MWF",
+  normal_tts: "NT-TTS",
+  weekend: "WE",
+};
+
+// Parses "09:00 AM - 11:00 AM" style strings into minutes-since-midnight
+// for the start time, just to sort timetable rows chronologically.
+const timingStartMinutes = (timing) => {
+  const match = (timing || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  let hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+  if (ampm === "PM" && hour !== 12) hour += 12;
+  if (ampm === "AM" && hour === 12) hour = 0;
+  return hour * 60 + minute;
+};
+
+// Builds the two-way weekly timetable (by subject, and by teacher) from
+// whatever batches already exist — no separate data entry for this.
+const buildTimetable = (batches) => {
+  const active = batches.filter(
+    (b) => b.active && b.timing && b.Subject && b.Teacher
+  );
+  const timings = [...new Set(active.map((b) => b.timing))].sort(
+    (a, b) => timingStartMinutes(a) - timingStartMinutes(b)
+  );
+  const subjects = [...new Set(active.map((b) => b.Subject.subject_name))].sort();
+  const teachers = [...new Set(active.map((b) => b.Teacher.teacher_name))].sort();
+
+  const bySubject = {};
+  const byTeacher = {};
+  timings.forEach((t) => {
+    bySubject[t] = {};
+    byTeacher[t] = {};
+  });
+
+  active.forEach((b) => {
+    const t = b.timing;
+    const subject = b.Subject.subject_name;
+    const teacher = b.Teacher.teacher_name;
+    const code = SECTION_SHORT[b.section] || b.section;
+
+    if (!bySubject[t][subject]) bySubject[t][subject] = [];
+    bySubject[t][subject].push({ batchId: b.id, label: `${teacher} (${code})` });
+
+    if (!byTeacher[t][teacher]) byTeacher[t][teacher] = [];
+    byTeacher[t][teacher].push({ batchId: b.id, label: `${subject} (${code})` });
+  });
+
+  return { timings, subjects, teachers, bySubject, byTeacher };
+};
+
 function GroupManagement() {
   const [toast, setToast] = useState(null);
   const [holidays, setHolidays] = useState([]);
@@ -530,6 +585,8 @@ function GroupManagement() {
     }
   };
 
+  const timetable = buildTimetable(batches);
+
   return (
     <div className="container-fluid" style={{ maxWidth: "1200px" }}>
       {toast && (
@@ -715,6 +772,96 @@ function GroupManagement() {
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        <div className="card shadow-sm mt-4">
+          <div className="card-body">
+            <h4 className="mb-3">Weekly Timetable — By Subject</h4>
+            {timetable.timings.length === 0 ? (
+              <div className="text-muted small">
+                No active batches with a timing set yet.
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-bordered table-sm align-middle text-center mb-0">
+                  <thead className="table-primary">
+                    <tr>
+                      <th>Time</th>
+                      {timetable.subjects.map((subject) => (
+                        <th key={subject}>{subject}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timetable.timings.map((t) => (
+                      <tr key={t}>
+                        <td className="fw-semibold">{t}</td>
+                        {timetable.subjects.map((subject) => {
+                          const cells = timetable.bySubject[t][subject] || [];
+                          return (
+                            <td key={subject}>
+                              {cells.length === 0
+                                ? "-"
+                                : cells.map((c) => (
+                                    <div key={c.batchId} className="small">
+                                      {c.label}
+                                    </div>
+                                  ))}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card shadow-sm mt-4">
+          <div className="card-body">
+            <h4 className="mb-3">Weekly Timetable — By Teacher</h4>
+            {timetable.timings.length === 0 ? (
+              <div className="text-muted small">
+                No active batches with a timing set yet.
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-bordered table-sm align-middle text-center mb-0">
+                  <thead className="table-primary">
+                    <tr>
+                      <th>Time</th>
+                      {timetable.teachers.map((teacher) => (
+                        <th key={teacher}>{teacher}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timetable.timings.map((t) => (
+                      <tr key={t}>
+                        <td className="fw-semibold">{t}</td>
+                        {timetable.teachers.map((teacher) => {
+                          const cells = timetable.byTeacher[t][teacher] || [];
+                          return (
+                            <td key={teacher}>
+                              {cells.length === 0
+                                ? "-"
+                                : cells.map((c) => (
+                                    <div key={c.batchId} className="small">
+                                      {c.label}
+                                    </div>
+                                  ))}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 

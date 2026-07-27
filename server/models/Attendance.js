@@ -42,6 +42,18 @@ const Attendance = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    // Per-student in/out time for this class session — separate from the
+    // session's own started_at/ended_at, since one student can walk in
+    // later or leave earlier than the class as a whole. Only ever set via
+    // the teacher's "Forgot Class" backfill/edit flow.
+    in_time: {
+      type: DataTypes.TIME,
+      allowNull: true,
+    },
+    out_time: {
+      type: DataTypes.TIME,
+      allowNull: true,
+    },
   },
   {
     tableName: "attendances",
