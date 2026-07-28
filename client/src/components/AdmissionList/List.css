@@ -72,7 +72,8 @@
 
 .list-table th:nth-child(1),
 .list-table td:nth-child(1) {
-  width: 4%;
+  width: 6%;
+  white-space: nowrap;
 }
 
 .list-table th:nth-child(2),
@@ -107,7 +108,7 @@
 
 .list-table th:nth-child(8),
 .list-table td:nth-child(8) {
-  width: 24%;
+  width: 22%;
 }
 
 .admission-list th,

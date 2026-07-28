@@ -44,6 +44,159 @@ const timingStartMinutes = (timing) => {
   return hour * 60 + minute;
 };
 
+// --- Weekly Calendar View (Google-Calendar-style grid) ---
+const CAL_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+const CAL_DAYS_SUN_FIRST = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+// Same section/day mapping used on the teacher side (server/utils/sections.js).
+const CAL_SECTION_DAYS = {
+  fast_track: [...CAL_DAYS],
+  normal_mwf: ["Monday", "Wednesday", "Friday"],
+  normal_tts: ["Tuesday", "Thursday", "Saturday"],
+  weekend: ["Saturday"],
+};
+
+// YYYY-MM-DD from a Date's LOCAL fields — never use .toISOString() for this;
+// that converts to UTC first, and for IST (+5:30) local midnight becomes
+// 6:30pm the previous day in UTC, silently shifting every calendar date back
+// by one. This is what the calendar view's day/week/month math must use.
+const toLocalDateStr = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+// The batch's Number-of-Days duration, counted from the day it was added
+// (created_at) over its section's actual class days — e.g. a 5-day Fast
+// Track batch runs 5 straight calendar days; a 5-day Normal-MWF batch runs
+// across its next 5 Mon/Wed/Fri occurrences. Returns the last date it's
+// still active on, or null if there's nothing to compute (no num_days set).
+const calendarBatchCutoffDate = (batch) => {
+  if (!batch.num_days || !batch.created_at) return null;
+  const activeDays = CAL_SECTION_DAYS[batch.section] || [];
+  if (activeDays.length === 0) return null;
+  const cur = new Date(batch.created_at);
+  cur.setHours(0, 0, 0, 0);
+  let count = 0;
+  for (let i = 0; i < 3660; i++) {
+    if (activeDays.includes(CAL_DAYS_SUN_FIRST[cur.getDay()])) {
+      count++;
+      if (count === batch.num_days) return toLocalDateStr(cur);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return null;
+};
+
+const calendarBatchActiveOnDate = (batch, dateStr) => {
+  const createdDateStr = batch.created_at
+    ? toLocalDateStr(new Date(batch.created_at))
+    : null;
+  if (createdDateStr && dateStr < createdDateStr) return false;
+  const cutoff = calendarBatchCutoffDate(batch);
+  if (cutoff && dateStr > cutoff) return false;
+  return true;
+};
+const CAL_START_HOUR = 8; // 8 AM
+const CAL_END_HOUR = 21; // 9 PM
+const CAL_PX_PER_MIN = 1;
+const CAL_COLORS = [
+  "#3b82f6",
+  "#ec4899",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#06b6d4",
+  "#ef4444",
+  "#84cc16",
+];
+const calendarColorForBatch = (id) => CAL_COLORS[id % CAL_COLORS.length];
+
+// Minutes-since-midnight -> compact "5pm" / "5:30pm" style label, matching
+// how Google Calendar shows event times in its month-view rows.
+const formatCalTime = (mins) => {
+  if (mins == null) return "";
+  let h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const ampm = h >= 12 ? "pm" : "am";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return m === 0 ? `${h}${ampm}` : `${h}:${String(m).padStart(2, "0")}${ampm}`;
+};
+
+// Parses "04:00 PM - 05:00 PM" into { start, end } minutes-since-midnight,
+// for positioning a batch block on the calendar's vertical time axis.
+const parseTimingRange = (timing) => {
+  if (!timing) return null;
+  const parts = timing.split(" - ").map((s) => s.trim());
+  if (parts.length !== 2) return null;
+  const parseOne = (str) => {
+    const m = str.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!m) return null;
+    return {
+      hour: parseInt(m[1], 10),
+      minute: parseInt(m[2], 10),
+      ampm: m[3] ? m[3].toUpperCase() : null,
+    };
+  };
+  const start = parseOne(parts[0]);
+  const end = parseOne(parts[1]);
+  if (!start || !end) return null;
+  if (!start.ampm && end.ampm) start.ampm = end.ampm;
+  if (!end.ampm && start.ampm) end.ampm = start.ampm;
+  const to24 = (t) => {
+    let h = t.hour;
+    if (t.ampm === "PM" && h !== 12) h += 12;
+    if (t.ampm === "AM" && h === 12) h = 0;
+    return h * 60 + t.minute;
+  };
+  return { start: to24(start), end: to24(end) };
+};
+
+// Groups a day's batches into overlap clusters — batches that share any
+// time overlap end up side-by-side in the same cluster/column-split.
+// `dateForDay`, when given, additionally excludes batches whose num_days
+// duration has finished by (or hasn't started by) that specific date.
+const buildCalendarDayClusters = (batches, day, dateForDay) => {
+  const dayBatches = batches
+    .filter(
+      (b) =>
+        b.active &&
+        b.timing &&
+        (CAL_SECTION_DAYS[b.section] || []).includes(day) &&
+        (!dateForDay || calendarBatchActiveOnDate(b, dateForDay))
+    )
+    .map((b) => ({ ...b, range: parseTimingRange(b.timing) }))
+    .filter((b) => b.range)
+    .sort((a, b) => a.range.start - b.range.start);
+
+  const clusters = [];
+  dayBatches.forEach((b) => {
+    const cluster = clusters.find((c) =>
+      c.some((e) => e.range.start < b.range.end && b.range.start < e.range.end)
+    );
+    if (cluster) cluster.push(b);
+    else clusters.push([b]);
+  });
+  return clusters;
+};
+
 // Builds the two-way weekly timetable (by subject, and by teacher) from
 // whatever batches already exist — no separate data entry for this.
 const buildTimetable = (batches) => {
@@ -132,6 +285,88 @@ function GroupManagement() {
   const SECTION_LABEL_BY_KEY = Object.fromEntries(
     SECTIONS.map((s) => [s.key, s.label])
   );
+
+  // --- Weekly Calendar View ---
+  const calendarDetailModalRef = useRef(null);
+  const [calendarExpanded, setCalendarExpanded] = useState({});
+  const [calendarDetailBatch, setCalendarDetailBatch] = useState(null);
+
+  const openCalendarBatchDetail = (batch) => {
+    setCalendarDetailBatch(batch);
+    Modal.getOrCreateInstance(calendarDetailModalRef.current).show();
+  };
+
+  const todayDateStr = toLocalDateStr(new Date());
+  // "day" = single weekday column, "week" = full Mon-Sun grid, "month" = compact month grid.
+  const [calendarViewMode, setCalendarViewMode] = useState("week");
+  const [calendarFilterDate, setCalendarFilterDate] = useState(todayDateStr);
+
+  const calendarDayForDate = (dateStr) => {
+    const jsDay = new Date(`${dateStr}T00:00:00`).getDay();
+    return CAL_DAYS_SUN_FIRST[jsDay];
+  };
+  const shiftCalendarDate = (dateStr, delta, unit = "day") => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (unit === "month") d.setMonth(d.getMonth() + delta);
+    else d.setDate(d.getDate() + delta);
+    return toLocalDateStr(d);
+  };
+  // Day mode: +/-1 day. Week mode: +/-7 days. Month mode: +/-1 calendar
+  // month, always landing on the 1st — stepping via setMonth() on the
+  // current day-of-month would overflow on 31st-of-month dates (e.g.
+  // Jan 31 -> Mar 3, silently skipping February).
+  const handleCalendarStep = (delta) => {
+    setCalendarFilterDate((d) => {
+      if (calendarViewMode === "month") {
+        const cur = new Date(`${d}T00:00:00`);
+        const target = new Date(cur.getFullYear(), cur.getMonth() + delta, 1);
+        return toLocalDateStr(target);
+      }
+      const step = calendarViewMode === "week" ? delta * 7 : delta;
+      return shiftCalendarDate(d, step, "day");
+    });
+  };
+
+  const calendarDaysToShow = calendarViewMode === "day" ? [calendarDayForDate(calendarFilterDate)] : CAL_DAYS;
+
+  // Full week always resolves to real dates (Monday-start) around whatever
+  // date is currently selected, purely so the num_days duration cutoff below
+  // has an actual calendar date to compare against per column.
+  const calendarWeekDates = (() => {
+    const anchor = new Date(`${calendarFilterDate}T00:00:00`);
+    const jsDay = anchor.getDay();
+    const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+    const monday = new Date(anchor);
+    monday.setDate(anchor.getDate() + mondayOffset);
+    const dates = {};
+    CAL_DAYS.forEach((day, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      dates[day] = toLocalDateStr(d);
+    });
+    return dates;
+  })();
+
+  const calendarMonthGrid = (() => {
+    const anchor = new Date(`${calendarFilterDate}T00:00:00`);
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth();
+    const firstOfMonth = new Date(year, month, 1);
+    const startOffset = firstOfMonth.getDay(); // Sunday-start grid
+    const gridStart = new Date(firstOfMonth);
+    gridStart.setDate(firstOfMonth.getDate() - startOffset);
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      cells.push({
+        dateStr: toLocalDateStr(d),
+        dayNum: d.getDate(),
+        inCurrentMonth: d.getMonth() === month,
+      });
+    }
+    return cells;
+  })();
 
   // --- Admin: teacher-wise batch progress (all teachers) ---
   const [teacherProgress, setTeacherProgress] = useState([]);
@@ -308,6 +543,14 @@ function GroupManagement() {
     (s) => String(s.id) === String(batchForm.subject_id)
   );
   const batchSubSubjects = selectedBatchSubject?.SubSubjects || [];
+  // Flat list of every sub-subject across every subject — lets the admin
+  // jump straight to a specific chapter (e.g. "Point of Sales") without
+  // first picking its parent Subject. Only used when no Subject is chosen;
+  // picking a Subject narrows back down to just its own children above.
+  const allSubSubjects = subjects.flatMap((s) =>
+    (s.SubSubjects || []).map((sub) => ({ ...sub, parent_subject_name: s.subject_name }))
+  );
+  const batchSubSubjectOptions = batchForm.subject_id ? batchSubSubjects : allSubSubjects;
   const effectiveBatchSubjectId =
     batchForm.sub_subject_id || batchForm.subject_id;
 
@@ -413,9 +656,15 @@ function GroupManagement() {
     const errors = {};
     if (!batchForm.batch_name.trim()) errors.batch_name = "Batch Name is required.";
     if (!batchForm.section) errors.section = "Section is required.";
-    if (!batchForm.subject_id) errors.subject_id = "Subject is required.";
-    if (batchSubSubjects.length > 0 && !batchForm.sub_subject_id)
+    if (!batchForm.subject_id && !batchForm.sub_subject_id) {
+      errors.subject_id = "Select a Subject or a Sub-Subject.";
+    } else if (
+      batchForm.subject_id &&
+      batchSubSubjects.length > 0 &&
+      !batchForm.sub_subject_id
+    ) {
       errors.sub_subject_id = "Sub-Subject is required.";
+    }
     if (!batchForm.teacher_id) errors.teacher_id = "Teacher is required.";
     if (!batchTiming) errors.timing = "Start Time and End Time are required.";
     if (Object.keys(errors).length > 0) {
@@ -644,6 +893,10 @@ function GroupManagement() {
                       }}
                     >
                       <h6 className="mb-2">{section.label}</h6>
+                      <div
+                        style={{ maxHeight: "520px", overflowY: "auto" }}
+                        className="pe-1"
+                      >
                       {sectionBatches.length === 0 ? (
                         <div className="text-muted small">No batches yet.</div>
                       ) : (
@@ -767,6 +1020,7 @@ function GroupManagement() {
                           </div>
                         ))
                       )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -862,6 +1116,296 @@ function GroupManagement() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="card shadow-sm mt-4">
+          <div className="card-body">
+            <h4 className="mb-3">Weekly Calendar View</h4>
+            <style>{`
+              @keyframes calendarSlideFade {
+                from { opacity: 0.35; transform: translateX(8px); }
+                to { opacity: 1; transform: translateX(0); }
+              }
+              .calendar-slide-anim { animation: calendarSlideFade 0.18s ease-out; }
+            `}</style>
+            <div className="text-muted small mb-2">
+              Click a batch to bring it forward when it overlaps another — click the{" "}
+              <i className="bi bi-eye"></i> icon on it to see full details (students, teacher).
+              A batch stops appearing once its "Number of Days" duration is used up.
+            </div>
+
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <div className="btn-group btn-group-sm" role="group">
+                {["day", "week", "month"].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`btn ${calendarViewMode === mode ? "btn-primary" : "btn-outline-primary"}`}
+                    onClick={() => setCalendarViewMode(mode)}
+                  >
+                    {mode[0].toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => setCalendarFilterDate(todayDateStr)}
+              >
+                Today
+              </button>
+              <input
+                type="date"
+                className="form-control form-control-sm"
+                style={{ maxWidth: "160px" }}
+                value={calendarFilterDate}
+                onChange={(e) => e.target.value && setCalendarFilterDate(e.target.value)}
+              />
+              <span className="small text-muted">
+                {calendarViewMode === "month"
+                  ? new Date(`${calendarFilterDate}T00:00:00`).toLocaleDateString("en-IN", {
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : calendarViewMode === "day"
+                    ? `${calendarDayForDate(calendarFilterDate)} (${calendarFilterDate})`
+                    : "This week"}
+              </span>
+            </div>
+
+            <div className="d-flex align-items-stretch gap-2">
+              <button
+                type="button"
+                className="btn btn-light border rounded-circle flex-shrink-0"
+                style={{ width: "40px", height: "40px", alignSelf: "center" }}
+                onClick={() => handleCalendarStep(-1)}
+                title="Previous"
+              >
+                <i className="bi bi-chevron-left"></i>
+              </button>
+
+              <div
+                className="flex-grow-1 calendar-slide-anim"
+                style={{ minWidth: 0 }}
+                key={`${calendarViewMode}-${calendarFilterDate}`}
+              >
+                {calendarViewMode === "month" ? (
+                  <div className="border rounded" style={{ width: "100%" }}>
+                    <div className="row g-0 text-center small fw-semibold bg-light border-bottom">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                        <div className="col p-1" key={d}>
+                          {d}
+                        </div>
+                      ))}
+                    </div>
+                    {/* One explicit .row per week (7 cells each) — Bootstrap's
+                        auto .col doesn't wrap after N items on its own, so a
+                        single flat .row of 42 cells collapses onto one line. */}
+                    {Array.from({ length: 6 }, (_, weekIdx) => (
+                      <div className="row g-0" key={weekIdx}>
+                        {calendarMonthGrid.slice(weekIdx * 7, weekIdx * 7 + 7).map((cell) => {
+                          const dayName = calendarDayForDate(cell.dateStr);
+                          // Adjacent-month padding cells stay blank — only the
+                          // current month's own cells compute/show batches, so
+                          // nothing "expired-looking" bleeds across the border.
+                          const cellBatches = cell.inCurrentMonth
+                            ? batches.filter(
+                                (b) =>
+                                  b.active &&
+                                  (CAL_SECTION_DAYS[b.section] || []).includes(dayName) &&
+                                  calendarBatchActiveOnDate(b, cell.dateStr)
+                              )
+                            : [];
+                          const isToday = cell.dateStr === todayDateStr;
+                          return (
+                            <div
+                              className="col p-1 border-end border-bottom overflow-hidden"
+                              key={cell.dateStr}
+                              role="button"
+                              style={{
+                                height: "100px",
+                                background: isToday ? "#f4f8ff" : "transparent",
+                              }}
+                              onClick={() => {
+                                setCalendarFilterDate(cell.dateStr);
+                                setCalendarViewMode("day");
+                              }}
+                            >
+                              <div className="mb-1" style={{ color: cell.inCurrentMonth ? "inherit" : "#ccc" }}>
+                                {isToday ? (
+                                  <span
+                                    className="badge rounded-pill bg-primary"
+                                    style={{ fontSize: "12px" }}
+                                  >
+                                    {cell.dayNum}
+                                  </span>
+                                ) : (
+                                  <span className="small fw-semibold">{cell.dayNum}</span>
+                                )}
+                              </div>
+                              {cellBatches.slice(0, 3).map((b) => {
+                                const range = parseTimingRange(b.timing);
+                                return (
+                                  <div
+                                    key={b.id}
+                                    className="d-flex align-items-center gap-1 text-truncate mb-1"
+                                    style={{ fontSize: "11px" }}
+                                  >
+                                    <span
+                                      className="rounded-circle flex-shrink-0"
+                                      style={{
+                                        width: "7px",
+                                        height: "7px",
+                                        background: calendarColorForBatch(b.id),
+                                      }}
+                                    ></span>
+                                    <span className="text-truncate">
+                                      {range ? `${formatCalTime(range.start)} ` : ""}
+                                      {b.batch_name}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              {cellBatches.length > 3 && (
+                                <div className="text-muted" style={{ fontSize: "10px" }}>
+                                  +{cellBatches.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto", width: "100%" }}>
+                    <div style={{ display: "flex", width: "100%" }}>
+                      <div style={{ width: "56px", flexShrink: 0 }}>
+                        <div style={{ height: "28px" }}></div>
+                        {Array.from(
+                          { length: CAL_END_HOUR - CAL_START_HOUR },
+                          (_, i) => CAL_START_HOUR + i
+                        ).map((hour) => (
+                          <div
+                            key={hour}
+                            className="text-muted small text-end pe-2"
+                            style={{ height: `${60 * CAL_PX_PER_MIN}px` }}
+                          >
+                            {hour % 12 === 0 ? 12 : hour % 12}
+                            {hour < 12 ? "AM" : "PM"}
+                          </div>
+                        ))}
+                      </div>
+                      {calendarDaysToShow.map((day) => {
+                        const dateForDay = calendarWeekDates[day];
+                        const clusters = buildCalendarDayClusters(batches, day, dateForDay);
+                        const dayHeight = (CAL_END_HOUR - CAL_START_HOUR) * 60 * CAL_PX_PER_MIN;
+                        return (
+                          <div key={day} style={{ flex: 1, minWidth: 0 }}>
+                            <div className="text-center fw-semibold small" style={{ height: "28px" }}>
+                              {day.slice(0, 3)}
+                              {calendarViewMode === "week" && (
+                                <span className="text-muted"> {dateForDay?.slice(8, 10)}</span>
+                              )}
+                            </div>
+                            <div
+                              className="border-start position-relative"
+                              style={{
+                                height: `${dayHeight}px`,
+                                backgroundImage:
+                                  "repeating-linear-gradient(to bottom, #eee, #eee 1px, transparent 1px, transparent 60px)",
+                              }}
+                            >
+                              {clusters.map((cluster) => {
+                                const expandedId = calendarExpanded[day];
+                                const hasExpanded = cluster.some((m) => m.id === expandedId);
+                                const widths = cluster.map((m) =>
+                                  hasExpanded
+                                    ? m.id === expandedId
+                                      ? 100 - (cluster.length - 1) * 16
+                                      : 16
+                                    : 100 / cluster.length
+                                );
+                                let cum = 0;
+                                const lefts = widths.map((w) => {
+                                  const l = cum;
+                                  cum += w;
+                                  return l;
+                                });
+                                return cluster.map((m, mi) => {
+                                  const top = (m.range.start - CAL_START_HOUR * 60) * CAL_PX_PER_MIN;
+                                  const height = (m.range.end - m.range.start) * CAL_PX_PER_MIN;
+                                  const isWide = widths[mi] >= 40;
+                                  return (
+                                    <div
+                                      key={m.id}
+                                      role="button"
+                                      onClick={() =>
+                                        cluster.length > 1 &&
+                                        setCalendarExpanded((prev) => ({ ...prev, [day]: m.id }))
+                                      }
+                                      className="position-absolute text-white overflow-hidden"
+                                      style={{
+                                        top: `${top}px`,
+                                        height: `${Math.max(height, 20)}px`,
+                                        left: `${lefts[mi]}%`,
+                                        width: `${widths[mi]}%`,
+                                        background: calendarColorForBatch(m.id),
+                                        borderRadius: "4px",
+                                        padding: "2px 4px",
+                                        fontSize: "11px",
+                                        lineHeight: "1.2",
+                                        border: "1px solid rgba(255,255,255,0.6)",
+                                        zIndex: m.id === expandedId ? 2 : 1,
+                                        cursor: cluster.length > 1 ? "pointer" : "default",
+                                      }}
+                                      title={`${m.batch_name} — ${m.Subject?.subject_name || ""}`}
+                                    >
+                                      {isWide && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm p-0 position-absolute top-0 end-0 text-white"
+                                          style={{ fontSize: "11px", lineHeight: 1, marginTop: "2px", marginRight: "2px" }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openCalendarBatchDetail(m);
+                                          }}
+                                          title="View batch details"
+                                        >
+                                          <i className="bi bi-eye-fill"></i>
+                                        </button>
+                                      )}
+                                      <div className="fw-semibold text-truncate">{m.batch_name}</div>
+                                      {isWide && (
+                                        <>
+                                          <div className="text-truncate">{m.Subject?.subject_name}</div>
+                                          <div className="text-truncate">{m.Teacher?.teacher_name}</div>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                });
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-light border rounded-circle flex-shrink-0"
+                style={{ width: "40px", height: "40px", alignSelf: "center" }}
+                onClick={() => handleCalendarStep(1)}
+                title="Next"
+              >
+                <i className="bi bi-chevron-right"></i>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1521,27 +2065,32 @@ function GroupManagement() {
                       <div className="invalid-feedback">{batchFormErrors.subject_id}</div>
                     )}
                   </div>
-                  {batchSubSubjects.length > 0 && (
-                    <div className="col-md-6">
-                      <label className="form-label">Sub-Subject</label>
-                      <select
-                        name="sub_subject_id"
-                        className={`form-select ${batchFormErrors.sub_subject_id ? "is-invalid" : ""}`}
-                        value={batchForm.sub_subject_id}
-                        onChange={handleBatchFormChange}
-                      >
-                        <option value="">-- Select Sub-Subject --</option>
-                        {batchSubSubjects.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.subject_name}
-                          </option>
-                        ))}
-                      </select>
-                      {batchFormErrors.sub_subject_id && (
-                        <div className="invalid-feedback">{batchFormErrors.sub_subject_id}</div>
-                      )}
-                    </div>
-                  )}
+                  <div className="col-md-6">
+                    <label className="form-label">Sub-Subject</label>
+                    <select
+                      name="sub_subject_id"
+                      className={`form-select ${batchFormErrors.sub_subject_id ? "is-invalid" : ""}`}
+                      value={batchForm.sub_subject_id}
+                      onChange={handleBatchFormChange}
+                    >
+                      <option value="">-- Select Sub-Subject --</option>
+                      {batchSubSubjectOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {batchForm.subject_id
+                            ? s.subject_name
+                            : `${s.subject_name} (${s.parent_subject_name})`}
+                        </option>
+                      ))}
+                    </select>
+                    {!batchForm.subject_id && (
+                      <div className="form-text">
+                        Pick directly from every sub-subject, or choose a Subject above to narrow this list.
+                      </div>
+                    )}
+                    {batchFormErrors.sub_subject_id && (
+                      <div className="invalid-feedback">{batchFormErrors.sub_subject_id}</div>
+                    )}
+                  </div>
 
                   <div className="col-md-4">
                     <label className="form-label">Number of Days</label>
@@ -1725,6 +2274,61 @@ function GroupManagement() {
               </button>
               <button type="button" className="btn btn-danger" onClick={handleDeleteBatch}>
                 Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" tabIndex="-1" ref={calendarDetailModalRef}>
+        <div className="modal-dialog modal-dialog-scrollable">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">{calendarDetailBatch?.batch_name}</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div className="modal-body">
+              {calendarDetailBatch && (
+                <>
+                  <div className="mb-2">
+                    <strong>Subject:</strong> {calendarDetailBatch.Subject?.subject_name || "-"}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Teacher:</strong> {calendarDetailBatch.Teacher?.teacher_name || "-"}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Section:</strong>{" "}
+                    {SECTION_LABEL_BY_KEY[calendarDetailBatch.section] || calendarDetailBatch.section}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Timing:</strong> {calendarDetailBatch.timing}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Number of Days:</strong> {calendarDetailBatch.num_days ?? "-"}
+                  </div>
+                  <div>
+                    <strong>
+                      Students ({(calendarDetailBatch.Students || []).length}):
+                    </strong>
+                    {(calendarDetailBatch.Students || []).length === 0 ? (
+                      <div className="text-muted small">No students assigned.</div>
+                    ) : (
+                      <ul className="mb-0 ps-3">
+                        {calendarDetailBatch.Students.map((s) => (
+                          <li key={s.id}>
+                            {s.applicant_name}
+                            {s.comn_enrol_no ? ` (${s.comn_enrol_no})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">
+                Close
               </button>
             </div>
           </div>
