@@ -17,6 +17,17 @@ import API from "../../api/api";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
+// A batch's Subject can itself be a sub-subject (has a Parent) — show both
+// so "GST" alone doesn't get shown without the "Tally" (or whichever)
+// subject it actually belongs to. Top-level subjects (no Parent) are
+// unaffected — just their own name.
+const subjectDisplayName = (subject) => {
+  if (!subject) return null;
+  return subject.Parent
+    ? `${subject.Parent.subject_name} — ${subject.subject_name}`
+    : subject.subject_name;
+};
+
 const HOURS = Array.from({ length: 12 }, (_, i) =>
   String(i + 1).padStart(2, "0")
 );
@@ -206,7 +217,7 @@ const buildTimetable = (batches) => {
   const timings = [...new Set(active.map((b) => b.timing))].sort(
     (a, b) => timingStartMinutes(a) - timingStartMinutes(b)
   );
-  const subjects = [...new Set(active.map((b) => b.Subject.subject_name))].sort();
+  const subjects = [...new Set(active.map((b) => subjectDisplayName(b.Subject)))].sort();
   const teachers = [...new Set(active.map((b) => b.Teacher.teacher_name))].sort();
 
   const bySubject = {};
@@ -218,7 +229,7 @@ const buildTimetable = (batches) => {
 
   active.forEach((b) => {
     const t = b.timing;
-    const subject = b.Subject.subject_name;
+    const subject = subjectDisplayName(b.Subject);
     const teacher = b.Teacher.teacher_name;
     const code = SECTION_SHORT[b.section] || b.section;
 
@@ -417,7 +428,7 @@ function GroupManagement() {
     const term = batchSearchTerm.toLowerCase();
     if ((b.batch_name || "").toLowerCase().includes(term)) return true;
     if ((b.Teacher?.teacher_name || "").toLowerCase().includes(term)) return true;
-    if ((b.Subject?.subject_name || "").toLowerCase().includes(term)) return true;
+    if ((subjectDisplayName(b.Subject) || "").toLowerCase().includes(term)) return true;
     return (SECTION_LABEL_BY_KEY[b.section] || "").toLowerCase().includes(term);
   });
 
@@ -426,13 +437,13 @@ function GroupManagement() {
       batchSortField === "teacher"
         ? a.Teacher?.teacher_name || ""
         : batchSortField === "subject"
-          ? a.Subject?.subject_name || ""
+          ? subjectDisplayName(a.Subject) || ""
           : a[batchSortField] ?? "";
     const valB =
       batchSortField === "teacher"
         ? b.Teacher?.teacher_name || ""
         : batchSortField === "subject"
-          ? b.Subject?.subject_name || ""
+          ? subjectDisplayName(b.Subject) || ""
           : b[batchSortField] ?? "";
     const result = valA.toString().localeCompare(valB.toString());
     return batchSortOrder === "asc" ? result : -result;
@@ -930,7 +941,7 @@ function GroupManagement() {
                                 )}
                             </div>
                             <div className="text-muted">
-                              {b.Subject?.subject_name || "-"}
+                              {subjectDisplayName(b.Subject) || "-"}
                             </div>
                             <div>{b.Teacher?.teacher_name || "-"}</div>
                             <div>{b.timing}</div>
@@ -1360,7 +1371,7 @@ function GroupManagement() {
                                         zIndex: m.id === expandedId ? 2 : 1,
                                         cursor: cluster.length > 1 ? "pointer" : "default",
                                       }}
-                                      title={`${m.batch_name} — ${m.Subject?.subject_name || ""}`}
+                                      title={`${m.batch_name} — ${subjectDisplayName(m.Subject) || ""}`}
                                     >
                                       {isWide && (
                                         <button
@@ -1379,7 +1390,7 @@ function GroupManagement() {
                                       <div className="fw-semibold text-truncate">{m.batch_name}</div>
                                       {isWide && (
                                         <>
-                                          <div className="text-truncate">{m.Subject?.subject_name}</div>
+                                          <div className="text-truncate">{subjectDisplayName(m.Subject)}</div>
                                           <div className="text-truncate">{m.Teacher?.teacher_name}</div>
                                         </>
                                       )}
@@ -1459,7 +1470,7 @@ function GroupManagement() {
                       <tr key={b.id}>
                         <td>{(batchCurrentPage - 1) * BATCH_ROWS_PER_PAGE + index + 1}</td>
                         <td>{b.batch_name}</td>
-                        <td>{b.Subject?.subject_name || "-"}</td>
+                        <td>{subjectDisplayName(b.Subject) || "-"}</td>
                         <td>{b.Teacher?.teacher_name || "-"}</td>
                         <td>
                           <span className="badge bg-info text-dark">
@@ -1771,6 +1782,18 @@ function GroupManagement() {
                           backgroundColor: "#dc2626",
                           borderRadius: 4,
                         },
+                        {
+                          label: "Total Students in Subject",
+                          data: subjectChart.map((s) => s.totalStudents),
+                          backgroundColor: "#2563eb",
+                          borderRadius: 4,
+                        },
+                        {
+                          label: "Not Assigned to Batch",
+                          data: subjectChart.map((s) => s.notAssignedCount),
+                          backgroundColor: "#f59e0b",
+                          borderRadius: 4,
+                        },
                       ],
                     }}
                     options={{
@@ -1778,9 +1801,18 @@ function GroupManagement() {
                       onClick: (_event, elements) => {
                         if (!elements.length) return;
                         const { datasetIndex, index } = elements[0];
+                        if (datasetIndex === 2) return; // Total bar — informational only, no drilldown list
                         const subject = subjectChart[index];
-                        const isCompleted = datasetIndex === 0;
                         setExpandedDrilldownStudentKey(null);
+                        if (datasetIndex === 3) {
+                          setChartDrilldown({
+                            subject_name: subject.subject_name,
+                            status: "Not Assigned",
+                            students: subject.notAssignedStudents,
+                          });
+                          return;
+                        }
+                        const isCompleted = datasetIndex === 0;
                         setChartDrilldown({
                           subject_name: subject.subject_name,
                           status: isCompleted ? "Completed" : "Not Completed",
@@ -1817,7 +1849,9 @@ function GroupManagement() {
                           className={
                             chartDrilldown.status === "Completed"
                               ? "text-success"
-                              : "text-danger"
+                              : chartDrilldown.status === "Not Assigned"
+                                ? "text-warning"
+                                : "text-danger"
                           }
                         >
                           {chartDrilldown.status}
@@ -1834,7 +1868,7 @@ function GroupManagement() {
                       <div className="text-muted small">No students in this group.</div>
                     ) : (
                       chartDrilldown.students.map((st) => {
-                        const key = `${st.batch_id}-${st.id}`;
+                        const key = st.id;
                         const isStudentOpen = expandedDrilldownStudentKey === key;
                         return (
                           <div key={key} className="border rounded p-2 mb-2">
@@ -1852,23 +1886,92 @@ function GroupManagement() {
                                 {st.comn_enrol_no && (
                                   <span className="text-muted"> ({st.comn_enrol_no})</span>
                                 )}
+                                {st.enrollments?.length > 1 && (
+                                  <span className="badge bg-info text-dark ms-2">
+                                    {st.enrollments.length} teachers
+                                  </span>
+                                )}
+                                {!st.enrollments && (
+                                  <span className="badge bg-warning text-dark ms-2">
+                                    No batch yet
+                                  </span>
+                                )}
                               </div>
                               <i
                                 className={`bi ${isStudentOpen ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}
                               ></i>
                             </div>
                             {isStudentOpen && (
-                              <div className="small text-muted mt-2">
-                                <div>
+                              <div className="small mt-2">
+                                <div className="text-muted mb-2">
                                   <strong>Subject:</strong> {chartDrilldown.subject_name}
                                 </div>
-                                <div>
-                                  <strong>Batch:</strong> {st.batch_name}
-                                </div>
-                                <div>
-                                  <strong>Classes attended:</strong> {st.presentCount} of{" "}
-                                  {st.num_days}
-                                </div>
+                                {!st.enrollments && (
+                                  <div className="text-muted">
+                                    <strong>Course:</strong> {st.course_name || "-"}
+                                    <div className="mt-1">
+                                      Admitted for this subject, but not yet added to any
+                                      batch teaching it.
+                                    </div>
+                                  </div>
+                                )}
+                                {st.enrollments &&
+                                  st.enrollments.map((en) => (
+                                    <div
+                                      key={en.batch_id}
+                                      className="border-top pt-2 mt-2"
+                                    >
+                                      <div>
+                                        <strong>Teacher:</strong> {en.teacher_name}{" "}
+                                        <span className="text-muted">— Batch: {en.batch_name}</span>
+                                      </div>
+                                      <div className="text-muted">
+                                        <strong>Classes attended:</strong> {en.presentCount} of{" "}
+                                        {en.num_days} (duration){" "}
+                                        {en.completed ? (
+                                          <span className="badge bg-success ms-1">Completed</span>
+                                        ) : (
+                                          <span className="badge bg-danger ms-1">Not Completed</span>
+                                        )}
+                                      </div>
+
+                                      {chartDrilldown.status === "Completed" ? (
+                                        <div className="mt-1">
+                                          <div className="fw-semibold text-success">
+                                            Topics Completed ({en.completedTopics.length})
+                                          </div>
+                                          {en.completedTopics.length === 0 ? (
+                                            <div className="text-muted">None yet</div>
+                                          ) : (
+                                            en.completedTopics.map((t) => (
+                                              <div key={t.date}>
+                                                <i className="bi bi-check-circle-fill text-success me-1"></i>
+                                                <span className="text-muted">{t.date}</span> —{" "}
+                                                {t.topic_covered}
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-1">
+                                          <div className="fw-semibold text-danger">
+                                            Topics Missed ({en.missedTopics.length})
+                                          </div>
+                                          {en.missedTopics.length === 0 ? (
+                                            <div className="text-muted">None</div>
+                                          ) : (
+                                            en.missedTopics.map((t) => (
+                                              <div key={t.date}>
+                                                <i className="bi bi-x-circle-fill text-danger me-1"></i>
+                                                <span className="text-muted">{t.date}</span> —{" "}
+                                                {t.topic_covered}
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
                               </div>
                             )}
                           </div>
@@ -2291,7 +2394,7 @@ function GroupManagement() {
               {calendarDetailBatch && (
                 <>
                   <div className="mb-2">
-                    <strong>Subject:</strong> {calendarDetailBatch.Subject?.subject_name || "-"}
+                    <strong>Subject:</strong> {subjectDisplayName(calendarDetailBatch.Subject) || "-"}
                   </div>
                   <div className="mb-2">
                     <strong>Teacher:</strong> {calendarDetailBatch.Teacher?.teacher_name || "-"}

@@ -12,14 +12,15 @@ require("../models/CourseSubject");
 const Batch = require("../models/Batch");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
-const StudentEntryAttendance = require("../models/StudentEntryAttendance");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS } = require("../utils/sections");
 
 // Which of a batch's students already got credit for `topic` before today
-// (class attendance AND campus entry attendance both true on some earlier
-// date this exact topic was covered in this batch) — they've already
-// completed it and don't need to be marked present again for a repeat.
+// (marked Present by the teacher on some earlier date this exact topic was
+// covered in this batch) — they've already completed it and don't need to
+// be marked present again for a repeat. Campus entry (fingerprint) isn't
+// set up yet, so completion is teacher-marked class attendance only —
+// revisit once entry attendance is actually being captured.
 const getStudentsAlreadyCompletedTopic = async (batchId, topic, todayStr, studentIds) => {
   if (!topic || !studentIds.length) return new Set();
   const pastSessions = await BatchSession.findAll({
@@ -30,20 +31,9 @@ const getStudentsAlreadyCompletedTopic = async (batchId, topic, todayStr, studen
   const classAttendance = await Attendance.findAll({
     where: { batch_id: batchId, admission_id: studentIds, date: pastDates },
   });
-  const entryAttendance = await StudentEntryAttendance.findAll({
-    where: { admission_id: studentIds, date: pastDates },
-  });
-  const entryByAdmission = new Map();
-  entryAttendance.forEach((e) => {
-    if (!entryByAdmission.has(e.admission_id)) entryByAdmission.set(e.admission_id, new Set());
-    entryByAdmission.get(e.admission_id).add(e.date);
-  });
   const completed = new Set();
   studentIds.forEach((id) => {
-    const entryDates = entryByAdmission.get(id) || new Set();
-    const done = pastDates.some(
-      (d) => entryDates.has(d) && classAttendance.some((a) => a.admission_id === id && a.date === d)
-    );
+    const done = classAttendance.some((a) => a.admission_id === id);
     if (done) completed.add(id);
   });
   return completed;

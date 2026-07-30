@@ -21,11 +21,15 @@ function AttendanceList() {
   const [copied, setCopied] = useState(false);
 
   const [batches, setBatches] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  // "" means All Dates — one merged, scrollable, date-ordered history
+  // instead of picking a single day.
+  const [selectedDate, setSelectedDate] = useState("");
   const [selectedBatchId, setSelectedBatchId] = useState("");
   const [batchAttendance, setBatchAttendance] = useState([]);
   const [batchAttendanceLoading, setBatchAttendanceLoading] = useState(true);
   const [batchAttendanceError, setBatchAttendanceError] = useState("");
+  const [topicFilter, setTopicFilter] = useState("");
+  const [teacherFilter, setTeacherFilter] = useState("");
 
   useEffect(() => {
     const fetchStatic = async () => {
@@ -49,12 +53,14 @@ function AttendanceList() {
       try {
         const response = await API.get("/attendance/batch-wise", {
           params: {
-            date: selectedDate,
+            date: selectedDate || undefined,
             batch_id: selectedBatchId || undefined,
           },
         });
         setBatchAttendance(response.data.data);
         setBatchAttendanceError("");
+        setTopicFilter("");
+        setTeacherFilter("");
       } catch (err) {
         setBatchAttendanceError(
           err.response?.data?.message || "Failed to load attendance."
@@ -81,6 +87,18 @@ function AttendanceList() {
     setSearchTerm("");
     setCopied(false);
   };
+
+  const topicOptions = [
+    ...new Set(batchAttendance.map((r) => r.topic_covered).filter(Boolean)),
+  ];
+  const teacherOptions = [
+    ...new Set(batchAttendance.map((r) => r.teacher_name).filter(Boolean)),
+  ];
+  const filteredBatchAttendance = batchAttendance.filter((r) => {
+    if (topicFilter && r.topic_covered !== topicFilter) return false;
+    if (teacherFilter && r.teacher_name !== teacherFilter) return false;
+    return true;
+  });
 
   const attendanceLink = selectedPerson
     ? `${window.location.origin}/attendance/register/${selectedPerson.slug}`
@@ -182,6 +200,13 @@ function AttendanceList() {
             </div>
             <button
               type="button"
+              className={`btn btn-sm ${selectedDate === "" ? "btn-primary" : "btn-outline-primary"}`}
+              onClick={() => setSelectedDate("")}
+            >
+              All Dates
+            </button>
+            <button
+              type="button"
               className={`btn btn-sm ${selectedDate === todayStr ? "btn-primary" : "btn-outline-primary"}`}
               onClick={() => setSelectedDate(todayStr)}
             >
@@ -204,6 +229,38 @@ function AttendanceList() {
                 onChange={(e) => setSelectedDate(e.target.value)}
               />
             </div>
+            <div>
+              <label className="form-label small mb-1">Covered Topic</label>
+              <select
+                className="form-select form-select-sm"
+                style={{ minWidth: "180px" }}
+                value={topicFilter}
+                onChange={(e) => setTopicFilter(e.target.value)}
+              >
+                <option value="">All Topics</option>
+                {topicOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label small mb-1">Teacher</label>
+              <select
+                className="form-select form-select-sm"
+                style={{ minWidth: "180px" }}
+                value={teacherFilter}
+                onChange={(e) => setTeacherFilter(e.target.value)}
+              >
+                <option value="">All Teachers</option>
+                {teacherOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {batchAttendanceLoading ? (
@@ -211,13 +268,18 @@ function AttendanceList() {
           ) : batchAttendanceError ? (
             <p className="text-center text-danger p-4">{batchAttendanceError}</p>
           ) : (
-            <div className="table-responsive">
+            <div
+              className="table-responsive"
+              style={{ maxHeight: "70vh", overflowY: "auto" }}
+            >
               <table className="table table-striped table-hover align-middle">
-                <thead className="table-primary">
+                <thead className="table-primary" style={{ position: "sticky", top: 0, zIndex: 1 }}>
                   <tr>
                     <th>#</th>
+                    <th>Date</th>
                     <th>Student Name</th>
                     <th>Subject</th>
+                    <th>Teacher</th>
                     <th>Covered Topic</th>
                     <th>Entry Attendance</th>
                     <th>Teacher Attendance</th>
@@ -225,17 +287,21 @@ function AttendanceList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {batchAttendance.length === 0 ? (
+                  {filteredBatchAttendance.length === 0 ? (
                     <tr>
-                      <td className="text-center text-muted" colSpan={7}>
-                        No class held{selectedBatchId ? " for this batch" : ""} on{" "}
-                        {selectedDate}.
+                      <td className="text-center text-muted" colSpan={9}>
+                        {batchAttendance.length === 0
+                          ? selectedDate
+                            ? `No class held${selectedBatchId ? " for this batch" : ""} on ${selectedDate}.`
+                            : `No attendance recorded${selectedBatchId ? " for this batch" : ""} yet.`
+                          : "No rows match the selected filters."}
                       </td>
                     </tr>
                   ) : (
-                    batchAttendance.map((r, index) => (
-                      <tr key={`${r.batch_id}-${r.student_id}`}>
+                    filteredBatchAttendance.map((r, index) => (
+                      <tr key={`${r.batch_id}-${r.student_id}-${r.date}`}>
                         <td>{index + 1}</td>
+                        <td>{r.date}</td>
                         <td>
                           {r.student_name}
                           {r.comn_enrol_no && (
@@ -244,6 +310,7 @@ function AttendanceList() {
                           <div className="text-muted small">{r.batch_name}</div>
                         </td>
                         <td>{r.subject_name || "-"}</td>
+                        <td>{r.teacher_name || "-"}</td>
                         <td>{r.topic_covered || "-"}</td>
                         <td>
                           <span

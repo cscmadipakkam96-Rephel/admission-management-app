@@ -7,7 +7,6 @@ const Admission = require("../models/Admission");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
-const StudentEntryAttendance = require("../models/StudentEntryAttendance");
 const { parseTimeRange, rangesOverlap } = require("../utils/timeRange");
 const {
   VALID_SECTIONS,
@@ -17,7 +16,11 @@ const {
 } = require("../utils/sections");
 
 const includeOptionsFor = (todayStr) => [
-  { model: Subject, attributes: ["id", "subject_name", "parent_id"] },
+  {
+    model: Subject,
+    attributes: ["id", "subject_name", "parent_id"],
+    include: [{ model: Subject, as: "Parent", attributes: ["id", "subject_name"] }],
+  },
   { model: Teacher, attributes: ["id", "teacher_name"] },
   { model: Admission, as: "Students", through: { attributes: [] } },
   {
@@ -507,6 +510,13 @@ const getTeacherBatchProgress = async (req, res) => {
 // (attended at least num_days Present sessions) vs not, across every batch
 // for that subject. Batches with no num_days target are skipped since
 // completion can't be measured for them.
+//
+// A student can be enrolled in more than one batch for the same subject
+// (e.g. two different teachers both teaching Windows) — each student
+// appears once per subject with an `enrollments` array covering every one
+// of their batches for it, each carrying its own teacher, attendance
+// count, and topic-by-topic completed/missed breakdown. The student
+// counts as subject-complete only if every one of their enrollments is.
 const getSubjectCompletionChart = async (req, res) => {
   try {
     const adminId = req.admin.adminId;
@@ -514,6 +524,7 @@ const getSubjectCompletionChart = async (req, res) => {
       where: { admin_id: adminId, active: true, num_days: { [Op.ne]: null } },
       include: [
         { model: Subject, attributes: ["id", "subject_name"] },
+        { model: Teacher, attributes: ["id", "teacher_name"] },
         { model: Admission, as: "Students", through: { attributes: [] } },
       ],
     });
@@ -521,6 +532,12 @@ const getSubjectCompletionChart = async (req, res) => {
     const batchIds = batches.map((b) => b.id);
     const attendanceRows = batchIds.length
       ? await Attendance.findAll({ where: { batch_id: batchIds } })
+      : [];
+    const sessions = batchIds.length
+      ? await BatchSession.findAll({
+          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null } },
+          order: [["date", "ASC"]],
+        })
       : [];
 
     const bySubject = new Map();
@@ -530,40 +547,114 @@ const getSubjectCompletionChart = async (req, res) => {
         bySubject.set(key, {
           subject_id: b.subject_id,
           subject_name: b.Subject?.subject_name || "Unknown",
-          completedStudents: [],
-          notCompletedStudents: [],
+          studentsById: new Map(),
         });
       }
       const bucket = bySubject.get(key);
+      const batchSessions = sessions.filter((s) => s.batch_id === b.id);
+
       (b.Students || []).forEach((s) => {
-        const presentCount = attendanceRows.filter(
-          (a) => a.batch_id === b.id && a.admission_id === s.id
-        ).length;
-        const entry = {
-          id: s.id,
-          applicant_name: s.applicant_name,
-          comn_enrol_no: s.comn_enrol_no,
+        const presentDates = new Set(
+          attendanceRows
+            .filter((a) => a.batch_id === b.id && a.admission_id === s.id)
+            .map((a) => a.date)
+        );
+        const completedTopics = [];
+        const missedTopics = [];
+        batchSessions.forEach((session) => {
+          const topic = { date: session.date, topic_covered: session.topic_covered };
+          if (presentDates.has(session.date)) {
+            completedTopics.push(topic);
+          } else {
+            missedTopics.push(topic);
+          }
+        });
+
+        if (!bucket.studentsById.has(s.id)) {
+          bucket.studentsById.set(s.id, {
+            id: s.id,
+            applicant_name: s.applicant_name,
+            comn_enrol_no: s.comn_enrol_no,
+            enrollments: [],
+          });
+        }
+        bucket.studentsById.get(s.id).enrollments.push({
           batch_id: b.id,
           batch_name: b.batch_name,
-          presentCount,
+          teacher_name: b.Teacher?.teacher_name || "Unassigned",
           num_days: b.num_days,
-        };
-        if (presentCount >= b.num_days) {
-          bucket.completedStudents.push(entry);
-        } else {
-          bucket.notCompletedStudents.push(entry);
-        }
+          presentCount: presentDates.size,
+          totalTopics: batchSessions.length,
+          // Completed = attended at least num_days classes (the batch's
+          // planned duration) — not "attended every topic ever covered".
+          completed: presentDates.size >= b.num_days,
+          completedTopics,
+          missedTopics,
+        });
       });
     });
 
-    const data = Array.from(bySubject.values()).map((s) => ({
-      subject_id: s.subject_id,
-      subject_name: s.subject_name,
-      completedCount: s.completedStudents.length,
-      notCompletedCount: s.notCompletedStudents.length,
-      completedStudents: s.completedStudents,
-      notCompletedStudents: s.notCompletedStudents,
-    }));
+    // Total students "in" a subject overall — every active admission whose
+    // Course includes this Subject, regardless of whether they've been put
+    // into a batch yet. Broader than completed+notCompleted on purpose:
+    // those two only cover students already enrolled in a tracked batch.
+    const subjectIds = Array.from(bySubject.keys());
+    const subjectsWithCourses = subjectIds.length
+      ? await Subject.findAll({
+          where: { id: subjectIds },
+          include: [
+            { model: Course, through: { attributes: [] }, attributes: ["course_name"] },
+          ],
+        })
+      : [];
+    const courseNamesBySubject = new Map(
+      subjectsWithCourses.map((subj) => [
+        subj.id,
+        (subj.Courses || [])
+          .map((c) => (c.course_name || "").toLowerCase().trim())
+          .filter(Boolean),
+      ])
+    );
+    const allAdmissions = await Admission.findAll({
+      where: { admin_id: adminId, active: true },
+      attributes: ["id", "applicant_name", "comn_enrol_no", "course_name"],
+    });
+
+    const data = Array.from(bySubject.values()).map((subj) => {
+      const students = Array.from(subj.studentsById.values());
+      // A student learning the same subject from two teachers only needs to
+      // finish it with ONE of them to count as done overall — each
+      // enrollment still shows its own Completed/Not Completed badge in the
+      // drilldown, so it's clear which teacher(s) it was finished with.
+      const completedStudents = students.filter((st) =>
+        st.enrollments.some((e) => e.completed)
+      );
+      const notCompletedStudents = students.filter((st) =>
+        st.enrollments.every((e) => !e.completed)
+      );
+      const batchedIds = new Set(students.map((st) => st.id));
+      const courseNames = courseNamesBySubject.get(subj.subject_id) || [];
+      const subjectAdmissions = allAdmissions.filter((a) =>
+        courseNames.includes((a.course_name || "").toLowerCase().trim())
+      );
+      // Admitted for a course covering this subject, but never put into any
+      // batch for it — too early to call them "not completed" since they
+      // haven't started, so they're their own category.
+      const notAssignedStudents = subjectAdmissions.filter(
+        (a) => !batchedIds.has(a.id)
+      );
+      return {
+        subject_id: subj.subject_id,
+        subject_name: subj.subject_name,
+        completedCount: completedStudents.length,
+        notCompletedCount: notCompletedStudents.length,
+        notAssignedCount: notAssignedStudents.length,
+        totalStudents: subjectAdmissions.length,
+        completedStudents,
+        notCompletedStudents,
+        notAssignedStudents,
+      };
+    });
 
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -587,11 +678,11 @@ const deleteBatch = async (req, res) => {
   }
 };
 
-// Admin view — per-student, per-subject topic completion. A topic only
-// counts as "completed" for a student when BOTH signals agree they were
-// really there that day: class attendance (Attendance row for that
-// batch+date) AND campus entry attendance (StudentEntryAttendance for that
-// date) — same double-check already used elsewhere for entry attendance.
+// Admin view — per-student, per-subject topic completion. A topic counts
+// as "completed" for a student when the teacher marked them Present that
+// day (Attendance row for that batch+date). Campus entry (fingerprint)
+// attendance isn't set up yet, so it isn't factored in here — once it's
+// actually being captured, this can go back to requiring both signals.
 // Subject-level "done" is a separate, teacher-declared flag (subject_completed
 // on Batch) since there's no master topic checklist to verify against.
 const getStudentTracking = async (req, res) => {
@@ -618,20 +709,6 @@ const getStudentTracking = async (req, res) => {
       ? await Attendance.findAll({ where: { batch_id: batchIds } })
       : [];
 
-    const admissionIds = [
-      ...new Set(batches.flatMap((b) => (b.Students || []).map((s) => s.id))),
-    ];
-    const entryAttendance = admissionIds.length
-      ? await StudentEntryAttendance.findAll({ where: { admission_id: admissionIds } })
-      : [];
-    const entryDatesByAdmission = new Map();
-    entryAttendance.forEach((e) => {
-      if (!entryDatesByAdmission.has(e.admission_id)) {
-        entryDatesByAdmission.set(e.admission_id, new Set());
-      }
-      entryDatesByAdmission.get(e.admission_id).add(e.date);
-    });
-
     const studentMap = new Map();
 
     batches.forEach((b) => {
@@ -642,31 +719,21 @@ const getStudentTracking = async (req, res) => {
             .filter((a) => a.batch_id === b.id && a.admission_id === student.id)
             .map((a) => [a.date, a])
         );
-        const entryDates = entryDatesByAdmission.get(student.id) || new Set();
 
         const completedTopics = [];
         const missedTopics = [];
         batchSessions.forEach((s) => {
           const hasClassAttendance = attendanceByDate.has(s.date);
-          const hasEntryAttendance = entryDates.has(s.date);
           const topic = {
             date: s.date,
             topic_covered: s.topic_covered,
             in_time: attendanceByDate.get(s.date)?.in_time || null,
             out_time: attendanceByDate.get(s.date)?.out_time || null,
           };
-          if (hasClassAttendance && hasEntryAttendance) {
+          if (hasClassAttendance) {
             completedTopics.push(topic);
           } else {
-            missedTopics.push({
-              ...topic,
-              reason:
-                !hasClassAttendance && !hasEntryAttendance
-                  ? "Absent from class and no campus entry recorded"
-                  : !hasClassAttendance
-                    ? "Not marked present in class"
-                    : "No campus entry recorded that day",
-            });
+            missedTopics.push({ ...topic, reason: "Not marked present in class" });
           }
         });
 
@@ -674,6 +741,15 @@ const getStudentTracking = async (req, res) => {
         const completionPercent = totalTopics
           ? Math.round((completedTopics.length / totalTopics) * 100)
           : 0;
+
+        // Batch (duration) progress — separate concept from topic
+        // completion above: classes attended vs the batch's PLANNED total
+        // days, not vs however many topics have actually been taught so
+        // far. Deliberately not merged with completionPercent.
+        const daysCompleted = completedTopics.length;
+        const durationPercent = b.num_days
+          ? Math.min(100, Math.round((daysCompleted / b.num_days) * 100))
+          : null;
 
         if (!studentMap.has(student.id)) {
           studentMap.set(student.id, {
@@ -696,11 +772,41 @@ const getStudentTracking = async (req, res) => {
           missedTopics,
           completionPercent,
           studentCoveredAllSoFar: totalTopics > 0 && completedTopics.length === totalTopics,
+          numDays: b.num_days,
+          daysCompleted,
+          durationPercent,
+          durationComplete: b.num_days != null && daysCompleted >= b.num_days,
         });
       });
     });
 
-    res.status(200).json({ success: true, data: Array.from(studentMap.values()) });
+    // Per-student overall attendance summary — across every subject/batch
+    // combined, using the same completed/missed topic data above.
+    const data = Array.from(studentMap.values()).map((student) => {
+      const totalClasses = student.subjects.reduce((sum, s) => sum + s.totalTopics, 0);
+      const present = student.subjects.reduce((sum, s) => sum + s.completedTopics.length, 0);
+      const absent = student.subjects.reduce((sum, s) => sum + s.missedTopics.length, 0);
+      const allAttendedDates = student.subjects.flatMap((s) =>
+        s.completedTopics.map((t) => t.date)
+      );
+      const lastAttendedDate = allAttendedDates.length
+        ? allAttendedDates.sort().at(-1)
+        : null;
+      return {
+        ...student,
+        attendanceSummary: {
+          totalClasses,
+          present,
+          absent,
+          overallAttendancePercent: totalClasses
+            ? Math.round((present / totalClasses) * 100)
+            : 0,
+          lastAttendedDate,
+        },
+      };
+    });
+
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

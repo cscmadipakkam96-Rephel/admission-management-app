@@ -4,6 +4,7 @@ const StudentEntryAttendance = require("../models/StudentEntryAttendance");
 const Holiday = require("../models/Holiday");
 const Batch = require("../models/Batch");
 const Subject = require("../models/Subject");
+const Teacher = require("../models/Teacher");
 const BatchSession = require("../models/BatchSession");
 const { parseTimeRange } = require("../utils/timeRange");
 const { isSectionActiveToday, SECTION_LABELS } = require("../utils/sections");
@@ -136,7 +137,9 @@ const getAllAttendance = async (req, res) => {
         marked_at: a.marked_at,
         status: a.status,
         has_entry_attendance: entryFound,
-        real_status: a.status === "Present" && entryFound ? "Present" : "Absent",
+        // Campus entry (fingerprint) attendance isn't set up yet — real
+        // status follows the teacher's Present mark alone for now.
+        real_status: a.status === "Present" ? "Present" : "Absent",
         group_name: batch?.batch_name || null,
         course_name: batch?.Subject?.subject_name || null,
         timing: batch?.timing || null,
@@ -221,8 +224,11 @@ const getAttendanceByAdmission = async (req, res) => {
   }
 };
 
-// Concept 2 attendance page — one row per student, per batch that actually
-// held class on the given date. "Entry" and "Teacher" attendance are two
+// Concept 2 attendance page — one row per student, per session (batch +
+// date) that actually held class. Passing `date` narrows to that single
+// day; omitting it returns every session across every date, newest first,
+// so the page can show one continuous scrollable history instead of
+// picking a date at a time. "Entry" and "Teacher" attendance are two
 // independent signals; Final Status only counts a student Present when both
 // agree (same cross-check used elsewhere in the app), so a student who was
 // marked present by the teacher but never physically entered campus (or vice
@@ -230,7 +236,7 @@ const getAttendanceByAdmission = async (req, res) => {
 const getBatchWiseAttendance = async (req, res) => {
   try {
     const adminId = req.admin.adminId;
-    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const date = req.query.date || null;
     const { batch_id } = req.query;
 
     const where = { admin_id: adminId, active: true };
@@ -244,37 +250,63 @@ const getBatchWiseAttendance = async (req, res) => {
       ],
       order: [["batch_name", "ASC"]],
     });
+    const batchById = new Map(batches.map((b) => [b.id, b]));
 
     const batchIds = batches.map((b) => b.id);
+    const sessionWhere = { batch_id: batchIds };
+    if (date) sessionWhere.date = date;
     const sessions = batchIds.length
-      ? await BatchSession.findAll({ where: { batch_id: batchIds, date } })
+      ? await BatchSession.findAll({ where: sessionWhere, order: [["date", "DESC"]] })
       : [];
-    const sessionByBatch = new Map(sessions.map((s) => [s.batch_id, s]));
+    const sessionDates = [...new Set(sessions.map((s) => s.date))];
 
-    const classAttendance = batchIds.length
-      ? await Attendance.findAll({ where: { batch_id: batchIds, date } })
+    // The teacher who actually ran each session — not just the batch's
+    // assigned teacher, since a substitute may have covered it that day.
+    const sessionTeacherIds = [
+      ...new Set(sessions.map((s) => s.teacher_id).filter(Boolean)),
+    ];
+    const sessionTeachers = sessionTeacherIds.length
+      ? await Teacher.findAll({
+          where: { id: sessionTeacherIds },
+          attributes: ["id", "teacher_name"],
+        })
+      : [];
+    const teacherNameById = new Map(
+      sessionTeachers.map((t) => [t.id, t.teacher_name])
+    );
+
+    const attendanceWhere = { batch_id: batchIds };
+    if (date) attendanceWhere.date = date;
+    else if (sessionDates.length) attendanceWhere.date = sessionDates;
+    const classAttendance = batchIds.length && sessionDates.length
+      ? await Attendance.findAll({ where: attendanceWhere })
       : [];
     const classAttendanceSet = new Set(
-      classAttendance.map((a) => `${a.batch_id}-${a.admission_id}`)
+      classAttendance.map((a) => `${a.batch_id}-${a.admission_id}-${a.date}`)
     );
 
     const admissionIds = [
       ...new Set(batches.flatMap((b) => (b.Students || []).map((s) => s.id))),
     ];
-    const entryAttendance = admissionIds.length
-      ? await StudentEntryAttendance.findAll({
-          where: { admission_id: admissionIds, date },
-        })
+    const entryWhere = { admission_id: admissionIds };
+    if (date) entryWhere.date = date;
+    else if (sessionDates.length) entryWhere.date = sessionDates;
+    const entryAttendance = admissionIds.length && sessionDates.length
+      ? await StudentEntryAttendance.findAll({ where: entryWhere })
       : [];
-    const entrySet = new Set(entryAttendance.map((e) => e.admission_id));
+    const entrySet = new Set(
+      entryAttendance.map((e) => `${e.admission_id}-${e.date}`)
+    );
 
     const rows = [];
-    batches.forEach((b) => {
-      const session = sessionByBatch.get(b.id);
-      if (!session) return; // this batch didn't hold class on this date
+    sessions.forEach((session) => {
+      const b = batchById.get(session.batch_id);
+      if (!b) return;
       (b.Students || []).forEach((student) => {
-        const teacherAttendance = classAttendanceSet.has(`${b.id}-${student.id}`);
-        const entryAtt = entrySet.has(student.id);
+        const teacherAttendance = classAttendanceSet.has(
+          `${b.id}-${student.id}-${session.date}`
+        );
+        const entryAtt = entrySet.has(`${student.id}-${session.date}`);
         rows.push({
           student_id: student.id,
           student_name: student.applicant_name,
@@ -282,10 +314,15 @@ const getBatchWiseAttendance = async (req, res) => {
           batch_id: b.id,
           batch_name: b.batch_name,
           subject_name: b.Subject?.subject_name || null,
+          date: session.date,
           topic_covered: session.topic_covered || null,
+          teacher_name: teacherNameById.get(session.teacher_id) || null,
           entry_attendance: entryAtt,
           teacher_attendance: teacherAttendance,
-          final_status: teacherAttendance && entryAtt ? "Present" : "Absent",
+          // Campus entry (fingerprint) attendance isn't set up yet, so
+          // Final Status follows the teacher's Present mark alone — revisit
+          // once entry attendance is actually being captured.
+          final_status: teacherAttendance ? "Present" : "Absent",
         });
       });
     });
