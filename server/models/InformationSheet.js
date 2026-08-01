@@ -34,6 +34,10 @@ const InformationSheet = sequelize.define(
       type: DataTypes.STRING(25),
       allowNull: true,
     },
+    telephone_no: {
+      type: DataTypes.STRING(25),
+      allowNull: true,
+    },
     email: {
       type: DataTypes.STRING(100),
       allowNull: true,

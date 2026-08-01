@@ -11,6 +11,7 @@ const initialForm = {
   father_husband_name: "",
   address: "",
   mobile_no: "",
+  telephone_no: "",
   email: "",
   sex: "",
   religion: "",
@@ -111,7 +112,8 @@ const VIEW_FIELDS = [
   { key: "father_husband_name", label: "Father's / Husband's Name" },
   { key: "address", label: "Address" },
   { key: "pin_code", label: "Pin Code" },
-  { key: "mobile_no", label: "Mobile / Telephone No" },
+  { key: "mobile_no", label: "Mobile No" },
+  { key: "telephone_no", label: "Telephone No" },
   { key: "email", label: "Email" },
   { key: "sex", label: "Sex" },
   { key: "religion", label: "Religion" },
@@ -214,6 +216,7 @@ function InformationSheetEntry() {
     return (
       (s.applicant_name || "").toLowerCase().includes(term) ||
       (s.mobile_no || "").toLowerCase().includes(term) ||
+      (s.telephone_no || "").toLowerCase().includes(term) ||
       (s.course_interested || "").toLowerCase().includes(term) ||
       (s.course || "").toLowerCase().includes(term)
     );
@@ -273,6 +276,7 @@ function InformationSheetEntry() {
       father_husband_name: sheet.father_husband_name || "",
       address: sheet.address || "",
       mobile_no: sheet.mobile_no || "",
+      telephone_no: sheet.telephone_no || "",
       email: sheet.email || "",
       sex: sheet.sex || "",
       religion: sheet.religion || "",
@@ -320,19 +324,8 @@ function InformationSheetEntry() {
     const { name, value } = e.target;
     let cleanValue = value;
 
-    if (name === "mobile_no") {
-      // Allow digits and a single "/" so both mobile & telephone number can be entered (e.g. 9876543210/5425433)
-      let v = value.replace(/[^\d/]/g, "");
-      const firstSlash = v.indexOf("/");
-      if (firstSlash !== -1) {
-        v =
-          v.slice(0, firstSlash + 1) +
-          v.slice(firstSlash + 1).replace(/\//g, "");
-      }
-      cleanValue = v
-        .split("/")
-        .map((part) => part.slice(0, MOBILE_SEGMENT_LENGTH))
-        .join("/");
+    if (name === "mobile_no" || name === "telephone_no") {
+      cleanValue = value.replace(/\D/g, "").slice(0, MOBILE_SEGMENT_LENGTH);
     }
 
     setFormData((prev) => ({
@@ -537,6 +530,7 @@ function InformationSheetEntry() {
                   <th>#</th>
                   <th>Name</th>
                   <th>Mobile</th>
+                  <th>Telephone</th>
                   <th>Course Interested</th>
                   <th>Plan to Join</th>
                   <th>Action</th>
@@ -545,7 +539,7 @@ function InformationSheetEntry() {
               <tbody>
                 {paginatedSheets.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted" colSpan={6}>
+                    <td className="text-center text-muted" colSpan={7}>
                       No information sheets found.
                     </td>
                   </tr>
@@ -555,6 +549,7 @@ function InformationSheetEntry() {
                       <td>{(currentPage - 1) * ROWS_PER_PAGE + index + 1}</td>
                       <td>{s.applicant_name || "-"}</td>
                       <td>{s.mobile_no || "-"}</td>
+                      <td>{s.telephone_no || "-"}</td>
                       <td>{s.course_interested || "-"}</td>
                       <td>
                         <span
@@ -725,14 +720,23 @@ function InformationSheetEntry() {
                     />
                   </div>
 
-                  <div className="col-md-6">
-                    <label className="form-label">Mobile / Telephone No</label>
+                  <div className="col-md-3">
+                    <label className="form-label">Mobile No</label>
                     <input
                       type="text"
                       name="mobile_no"
                       className="form-control"
-                      placeholder="e.g. 9876543210/5425433"
                       value={formData.mobile_no}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label className="form-label">Telephone No</label>
+                    <input
+                      type="text"
+                      name="telephone_no"
+                      className="form-control"
+                      value={formData.telephone_no}
                       onChange={handleChange}
                     />
                   </div>

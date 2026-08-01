@@ -13,6 +13,7 @@ const FIELDS = [
   "father_husband_name",
   "address",
   "mobile_no",
+  "telephone_no",
   "email",
   "sex",
   "religion",
@@ -73,10 +74,9 @@ const getAllInformationSheets = async (req, res) => {
     );
 
     const data = sheets.map((s) => {
-      const sheetPhones = (s.mobile_no || "")
-        .split("/")
-        .map((p) => normalizePhone(p))
-        .filter(Boolean);
+      const sheetPhones = [normalizePhone(s.mobile_no), normalizePhone(s.telephone_no)].filter(
+        Boolean
+      );
       const is_joined = sheetPhones.some((p) => admittedPhones.has(p));
       return {
         ...s.toJSON(),
