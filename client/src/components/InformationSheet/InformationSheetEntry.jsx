@@ -461,7 +461,7 @@ function InformationSheetEntry() {
       <div className="card shadow-sm">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <h4 className="mb-0">Information Sheet</h4>
+            <h4 className="mb-0">Information Sheet (Test)</h4>
             <div className="d-flex gap-2 flex-wrap">
               <Link
                 to="/information-sheet/inactive"
