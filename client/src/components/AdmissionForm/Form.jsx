@@ -7,6 +7,7 @@ const FIELD_LABELS = {
   course_name: "Course Name",
   session: "Session",
   applicant_name: "Name",
+  initial: "Initial",
   father_husband_name: "Father's / Husband's Name",
   guardian_occupation: "Occupation of Father / Guardian",
   date_of_birth: "Date of Birth",
@@ -24,7 +25,7 @@ const FIELD_LABELS = {
   company_name: "Company Name",
 };
 
-const NAME_ONLY_FIELDS = ["applicant_name", "father_husband_name"];
+const NAME_ONLY_FIELDS = ["applicant_name", "initial", "father_husband_name"];
 const NAME_PATTERN = /[^a-zA-Z.'\s]/g;
 
 const DIGIT_ONLY_FIELDS = ["aadhar_no", "telephone_no", "mobile_no"];
@@ -67,6 +68,7 @@ const initialState = {
   course_name: "",
   session: "",
   applicant_name: "",
+  initial: "",
   father_husband_name: "",
   guardian_occupation: "",
   date_of_birth: "",
@@ -214,6 +216,20 @@ function Form() {
             <span className="error-text">{errors.session}</span>
           )}
         </div>
+      </div>
+
+      <div className="field">
+        <label>Initial</label>
+        <input
+          type="text"
+          name="initial"
+          className={errors.initial ? "input-error" : ""}
+          value={formData.initial}
+          onChange={handleChange}
+        />
+        {errors.initial && (
+          <span className="error-text">{errors.initial}</span>
+        )}
       </div>
 
       <div className="field">

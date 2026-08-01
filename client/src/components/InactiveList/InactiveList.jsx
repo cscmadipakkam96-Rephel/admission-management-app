@@ -9,6 +9,7 @@ const COLUMNS = [
   { key: "course_name", label: "Course" },
   { key: "session", label: "Session" },
   { key: "applicant_name", label: "Name" },
+  { key: "initial", label: "Initial" },
   { key: "father_husband_name", label: "Father/Husband" },
   { key: "guardian_occupation", label: "Guardian Occupation" },
   { key: "date_of_birth", label: "DOB" },

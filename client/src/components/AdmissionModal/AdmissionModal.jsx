@@ -6,6 +6,7 @@ const FIELD_LABELS = {
   course_name: "Course Name",
   session: "Session",
   applicant_name: "Name",
+  initial: "Initial",
   father_husband_name: "Father's / Husband's Name",
   guardian_occupation: "Occupation of Father / Guardian",
   date_of_birth: "Date of Birth",
@@ -25,7 +26,7 @@ const FIELD_LABELS = {
 
 const REQUIRED_FIELDS = [];
 
-const NAME_ONLY_FIELDS = ["applicant_name", "father_husband_name"];
+const NAME_ONLY_FIELDS = ["applicant_name", "initial", "father_husband_name"];
 const NAME_PATTERN = /[^a-zA-Z.'\s]/g;
 
 const DIGIT_ONLY_FIELDS = ["aadhar_no", "telephone_no", "mobile_no"];
@@ -59,6 +60,7 @@ const initialState = {
   course_name: "",
   session: "",
   applicant_name: "",
+  initial: "",
   father_husband_name: "",
   guardian_occupation: "",
   date_of_birth: "",
@@ -343,6 +345,20 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                   )}
                 </div>
 
+                <div className="w-100"></div>
+                <div className="col-md-3">
+                  <label className="form-label">Initial</label>
+                  <input
+                    type="text"
+                    name="initial"
+                    className={`form-control ${errors.initial ? "is-invalid" : ""}`}
+                    value={formData.initial}
+                    onChange={handleChange}
+                  />
+                  {errors.initial && (
+                    <div className="invalid-feedback">{errors.initial}</div>
+                  )}
+                </div>
                 <div className="col-md-6">
                   <label className="form-label">Name Mr. / Mrs. / Ms.</label>
                   <input

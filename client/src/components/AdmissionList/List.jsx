@@ -17,6 +17,7 @@ const EXPORT_COLUMNS = [
   { key: "course_name", label: "Course" },
   { key: "session", label: "Session" },
   { key: "applicant_name", label: "Name" },
+  { key: "initial", label: "Initial" },
   { key: "father_husband_name", label: "Father/Husband" },
   { key: "guardian_occupation", label: "Guardian Occupation" },
   { key: "date_of_birth", label: "DOB" },
@@ -101,6 +102,7 @@ function List() {
   const SORTABLE_COLUMNS = [
     { key: "comn_enrol_no", label: "Enrol No" },
     { key: "applicant_name", label: "Name" },
+    { key: "initial", label: "Initial" },
     { key: "course_name", label: "Course" },
     { key: "mobile_no", label: "Mobile" },
     { key: "created_at", label: "Submitted On" },
@@ -376,7 +378,7 @@ function List() {
           <tbody>
             {paginatedAdmissions.length === 0 ? (
               <tr>
-                <td className="list-status" colSpan={8}>
+                <td className="list-status" colSpan={9}>
                   No admission records found.
                 </td>
               </tr>
@@ -386,6 +388,7 @@ function List() {
                   <td>{(currentPage - 1) * ROWS_PER_PAGE + index + 1}</td>
                   <td>{row.comn_enrol_no || "-"}</td>
                   <td className="name-cell">{row.applicant_name}</td>
+                  <td>{row.initial || "-"}</td>
                   <td>{row.course_name}</td>
                   <td>{row.mobile_no}</td>
                   <td>{formatDateTime(row.created_at)}</td>

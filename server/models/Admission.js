@@ -39,6 +39,10 @@ const Admission = sequelize.define(
       type: DataTypes.STRING(100),
       allowNull: true,
     },
+    initial: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     father_husband_name: {
       type: DataTypes.STRING(100),
       allowNull: true,
