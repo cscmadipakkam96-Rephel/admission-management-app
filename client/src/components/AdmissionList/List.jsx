@@ -53,6 +53,15 @@ const formatDateTime = (value) => {
   });
 };
 
+const formatDateOnly = (value) => {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
 function List() {
   const [admissions, setAdmissions] = useState([]);
   const [feeEntries, setFeeEntries] = useState([]);
@@ -104,7 +113,7 @@ function List() {
     { key: "applicant_name", label: "Name" },
     { key: "course_name", label: "Course" },
     { key: "mobile_no", label: "Mobile" },
-    { key: "created_at", label: "Submitted On" },
+    { key: "admission_date", label: "Admission Date" },
   ];
 
   const handleSort = (field) => {
@@ -198,7 +207,7 @@ function List() {
     const valA = a[sortField] ?? "";
     const valB = b[sortField] ?? "";
     let result;
-    if (sortField === "created_at") {
+    if (sortField === "created_at" || sortField === "admission_date") {
       result = new Date(valA) - new Date(valB);
     } else if (sortField === "comn_enrol_no") {
       const numA = parseInt(valA.toString().replace(/\D/g, ""), 10);
@@ -389,7 +398,7 @@ function List() {
                   <td className="name-cell">{row.applicant_name}</td>
                   <td>{row.course_name}</td>
                   <td>{row.mobile_no}</td>
-                  <td>{formatDateTime(row.created_at)}</td>
+                  <td>{formatDateOnly(row.admission_date)}</td>
                   <td>{row.common_enrol_no || "-"}</td>
                   <td className="d-flex gap-2">
                     <button

@@ -10,7 +10,9 @@ const toDateStr = (date) => {
 const QUICK_RANGES = [
   { key: "today", label: "Today" },
   { key: "week", label: "This Week" },
+  { key: "lastWeek", label: "Last Week" },
   { key: "month", label: "This Month" },
+  { key: "lastMonth", label: "Last Month" },
   { key: "all", label: "All Time" },
 ];
 
@@ -73,10 +75,26 @@ function AdmissionReportCard({
       monday.setDate(now.getDate() - daysSinceMonday);
       setStartDate(toDateStr(monday));
       setEndDate(nowStr);
+    } else if (key === "lastWeek") {
+      const dayOfWeek = now.getDay();
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() - daysSinceMonday);
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(thisMonday.getDate() - 1);
+      setStartDate(toDateStr(lastMonday));
+      setEndDate(toDateStr(lastSunday));
     } else if (key === "month") {
       const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       setStartDate(toDateStr(firstOfMonth));
       setEndDate(nowStr);
+    } else if (key === "lastMonth") {
+      const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      setStartDate(toDateStr(firstOfLastMonth));
+      setEndDate(toDateStr(lastOfLastMonth));
     } else if (key === "all") {
       setStartDate(earliestDateStr);
       setEndDate(allTimeEndStr);
