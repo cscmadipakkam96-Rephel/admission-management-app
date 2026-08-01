@@ -1,0 +1,7 @@
+node_modules
+.env
+server.log
+server_out.log
+*.sql
+*.xlsx
+backups/
