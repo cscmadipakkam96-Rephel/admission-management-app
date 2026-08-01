@@ -6,12 +6,16 @@ import InactiveList from "./components/InactiveList/InactiveList";
 import FeeHistory from "./components/FeeHistory/FeeHistory";
 import FeeEntry from "./components/FeeEntry/FeeEntry";
 import InformationSheetEntry from "./components/InformationSheet/InformationSheetEntry";
+import InactiveInformationSheets from "./components/InformationSheet/InactiveInformationSheets";
 import CourseManagement from "./components/CourseManagement/CourseManagement";
 import InactiveCourses from "./components/CourseManagement/InactiveCourses";
 import SubjectManagement from "./components/SubjectManagement/SubjectManagement";
+import InactiveSubjects from "./components/SubjectManagement/InactiveSubjects";
 import TeacherManagement from "./components/TeacherManagement/TeacherManagement";
+import InactiveTeachers from "./components/TeacherManagement/InactiveTeachers";
 import BatchManagement from "./components/BatchManagement/BatchManagement";
 import ExpenseTracking from "./components/ExpenseTracking/ExpenseTracking";
+import InactiveExpenses from "./components/ExpenseTracking/InactiveExpenses";
 import StudentTracking from "./components/StudentTracking/StudentTracking";
 import AttendanceList from "./components/AttendanceList/AttendanceList";
 import AttendanceScanner from "./components/AttendanceScanner/AttendanceScanner";
@@ -124,13 +128,23 @@ function App() {
             <Route path="/fee-entry" element={<FeeEntry />} />
             <Route path="/expense-tracking" element={<ExpenseTracking />} />
             <Route
+              path="/expense-tracking/inactive"
+              element={<InactiveExpenses />}
+            />
+            <Route
               path="/information-sheet"
               element={<InformationSheetEntry />}
+            />
+            <Route
+              path="/information-sheet/inactive"
+              element={<InactiveInformationSheets />}
             />
             <Route path="/courses" element={<CourseManagement />} />
             <Route path="/courses/inactive" element={<InactiveCourses />} />
             <Route path="/subjects" element={<SubjectManagement />} />
+            <Route path="/subjects/inactive" element={<InactiveSubjects />} />
             <Route path="/teachers" element={<TeacherManagement />} />
+            <Route path="/teachers/inactive" element={<InactiveTeachers />} />
             <Route path="/batches" element={<BatchManagement />} />
             <Route path="/student-tracking" element={<StudentTracking />} />
             <Route path="/attendance" element={<AttendanceList />} />

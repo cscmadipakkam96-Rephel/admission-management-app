@@ -139,9 +139,35 @@ const deleteInformationSheet = async (req, res) => {
   }
 };
 
+const restoreInformationSheet = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sheet = await InformationSheet.findOne({
+      where: { id, admin_id: req.admin.adminId },
+    });
+    if (!sheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Information sheet not found",
+      });
+    }
+    await sheet.update({ active: true });
+    res.status(200).json({
+      success: true,
+      message: "Information sheet restored successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   getAllInformationSheets,
   createInformationSheet,
   updateInformationSheet,
   deleteInformationSheet,
+  restoreInformationSheet,
 };

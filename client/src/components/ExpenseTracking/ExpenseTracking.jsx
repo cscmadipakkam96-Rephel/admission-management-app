@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Modal } from "bootstrap";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -136,7 +137,7 @@ function ExpenseTracking() {
 
   const fetchExpenses = async () => {
     try {
-      const response = await API.get("/expenses");
+      const response = await API.get("/expenses?active=true");
       setExpenses(response.data.data);
       setError("");
     } catch (err) {
@@ -642,6 +643,9 @@ const handleSubmit = async (e) => {
           <i className="bi bi-cash-stack me-2 text-danger"></i>Expense Tracking
         </h3>
         <div className="d-flex gap-2 flex-wrap">
+          <Link to="/expense-tracking/inactive" className="btn btn-outline-danger btn-sm">
+            <i className="bi bi-x-circle me-1"></i> Inactive Records
+          </Link>
           <button type="button" className="btn btn-outline-success btn-sm" onClick={exportToExcel}>
             <i className="bi bi-file-earmark-excel me-1"></i> Export Excel
           </button>

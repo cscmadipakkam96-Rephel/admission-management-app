@@ -47,8 +47,9 @@ const createExpense = async (req, res) => {
 
 const getAllExpenses = async (req, res) => {
   try {
+    const isActive = req.query.active !== "false";
     const expenses = await Expense.findAll({
-      where: { admin_id: req.admin.adminId, is_deleted: false },
+      where: { admin_id: req.admin.adminId, is_deleted: !isActive },
       order: [["id", "ASC"]],
     });
     const admin = await Admin.findByPk(req.admin.adminId);
@@ -144,6 +145,31 @@ const deleteExpense = async (req, res) => {
   }
 };
 
+const restoreExpense = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const expense = await Expense.findOne({
+      where: { id, admin_id: req.admin.adminId, is_deleted: true },
+    });
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense entry not found",
+      });
+    }
+    await expense.update({ is_deleted: false });
+    res.status(200).json({
+      success: true,
+      message: "Expense entry restored successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const getExpenseBudget = async (req, res) => {
   try {
     const admin = await Admin.findByPk(req.admin.adminId);
@@ -181,6 +207,7 @@ module.exports = {
   getAllExpenses,
   updateExpense,
   deleteExpense,
+  restoreExpense,
   getExpenseBudget,
   updateExpenseBudget,
 };

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Modal } from "bootstrap";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -442,6 +443,9 @@ function TeacherManagement() {
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <h4 className="mb-0">Teacher Management</h4>
             <div className="d-flex gap-2 flex-wrap">
+              <Link to="/teachers/inactive" className="btn btn-outline-danger btn-sm">
+                <i className="bi bi-person-x me-1"></i> Inactive Records
+              </Link>
               <button
                 type="button"
                 className="btn btn-outline-success btn-sm"
