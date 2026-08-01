@@ -933,6 +933,7 @@ function InformationSheetEntry() {
                       <option value="Immediately">Immediately</option>
                       <option value="Within a week">Within a week</option>
                       <option value="Within a month">Within a month</option>
+                      <option value="Joined">Joined</option>
                     </select>
                   </div>
 
