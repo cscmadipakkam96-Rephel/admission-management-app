@@ -102,11 +102,6 @@ const InformationSheet = sequelize.define(
       type: DataTypes.STRING(30),
       allowNull: true,
     },
-    status: {
-      type: DataTypes.STRING(30),
-      allowNull: true,
-      defaultValue: "New",
-    },
     heard_source: {
       type: DataTypes.STRING(255),
       allowNull: true,
