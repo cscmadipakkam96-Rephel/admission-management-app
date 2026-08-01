@@ -14,7 +14,10 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo 'No automated test suite yet — skipping.'
+                sh '''
+                    docker run --rm -v "$WORKSPACE/server":/app -w /app node:20-alpine \
+                        sh -c "npm install && npm test"
+                '''
             }
         }
 
