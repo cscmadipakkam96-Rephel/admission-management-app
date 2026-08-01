@@ -28,6 +28,7 @@ const initialForm = {
   course_interested: "",
   preferred_timings: "",
   plan_to_join: "",
+  status: "New",
   heard_source: [],
   interested_updates: [],
   sheet_date: "",
@@ -42,6 +43,21 @@ const initialForm = {
 const UPDATE_CHANNELS = ["SMS", "WhatsApp", "Telephone"];
 
 const MOBILE_SEGMENT_LENGTH = 10;
+
+const STATUS_OPTIONS = [
+  { value: "New", badge: "secondary" },
+  { value: "Called - No Answer", badge: "warning" },
+  { value: "Spoke - Interested", badge: "info" },
+  { value: "Coming Directly", badge: "primary" },
+  { value: "Joined", badge: "success" },
+  { value: "Wrong Enquiry", badge: "danger" },
+  { value: "Follow Up", badge: "warning" },
+  { value: "Fee Issue", badge: "info" },
+  { value: "Not Interested", badge: "dark" },
+];
+
+const statusBadgeClass = (status) =>
+  STATUS_OPTIONS.find((s) => s.value === status)?.badge || "secondary";
 
 const QUALIFICATION_OPTIONS = [
   "10th & Below",
@@ -110,6 +126,7 @@ const VIEW_FIELDS = [
   { key: "course_interested", label: "Course Interested to Join" },
   { key: "preferred_timings", label: "Preferred Timings" },
   { key: "effective_plan_to_join", label: "Plan to Join" },
+  { key: "status", label: "Status" },
   { key: "heard_source", label: "How Did You Know About Us" },
   { key: "interested_updates", label: "Interested in Updates Via" },
   { key: "enrol_no", label: "E.No" },
@@ -272,6 +289,7 @@ function InformationSheetEntry() {
       course_interested: sheet.course_interested || "",
       preferred_timings: sheet.preferred_timings || "",
       plan_to_join: sheet.plan_to_join || "",
+      status: sheet.status || "New",
       heard_source: sheet.heard_source
         ? sheet.heard_source.split(",").map((s) => s.trim())
         : [],
@@ -521,13 +539,14 @@ function InformationSheetEntry() {
                   <th>Mobile</th>
                   <th>Course Interested</th>
                   <th>Plan to Join</th>
+                  <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedSheets.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted" colSpan={6}>
+                    <td className="text-center text-muted" colSpan={7}>
                       No information sheets found.
                     </td>
                   </tr>
@@ -544,6 +563,11 @@ function InformationSheetEntry() {
                         ) : (
                           s.effective_plan_to_join || "-"
                         )}
+                      </td>
+                      <td>
+                        <span className={`badge bg-${statusBadgeClass(s.status)}`}>
+                          {s.status || "New"}
+                        </span>
                       </td>
                       <td className="d-flex gap-2">
                         <button
@@ -986,6 +1010,21 @@ function InformationSheetEntry() {
                         <option value="Joined">Joined</option>
                       </select>
                     )}
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Status</label>
+                    <select
+                      name="status"
+                      className="form-select"
+                      value={formData.status}
+                      onChange={handleChange}
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.value}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="col-12">

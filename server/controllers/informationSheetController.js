@@ -30,6 +30,7 @@ const FIELDS = [
   "course_interested",
   "preferred_timings",
   "plan_to_join",
+  "status",
   "heard_source",
   "interested_updates",
   "sheet_date",
