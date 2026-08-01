@@ -12,23 +12,6 @@ pipeline {
             }
         }
 
-        stage('Install & Build Frontend') {
-            steps {
-                dir('client') {
-                    sh 'npm install'
-                    sh 'npm run build'
-                }
-            }
-        }
-
-        stage('Install Backend Dependencies') {
-            steps {
-                dir('server') {
-                    sh 'npm install'
-                }
-            }
-        }
-
         stage('Test') {
             steps {
                 echo 'No automated test suite yet — skipping.'
