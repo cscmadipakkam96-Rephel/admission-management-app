@@ -109,7 +109,7 @@ const VIEW_FIELDS = [
   { key: "study_reason", label: "Why Study Computer Course" },
   { key: "course_interested", label: "Course Interested to Join" },
   { key: "preferred_timings", label: "Preferred Timings" },
-  { key: "plan_to_join", label: "Plan to Join" },
+  { key: "effective_plan_to_join", label: "Plan to Join" },
   { key: "heard_source", label: "How Did You Know About Us" },
   { key: "interested_updates", label: "Interested in Updates Via" },
   { key: "enrol_no", label: "E.No" },
@@ -129,6 +129,7 @@ function InformationSheetEntry() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [joinFilter, setJoinFilter] = useState("all");
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
@@ -158,7 +159,7 @@ function InformationSheetEntry() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, joinFilter]);
 
   useEffect(() => {
     if (!toast) return;
@@ -188,6 +189,8 @@ function InformationSheetEntry() {
   }, [loading]);
 
   const filteredSheets = sheets.filter((s) => {
+    if (joinFilter === "joined" && !s.is_joined) return false;
+    if (joinFilter === "not_joined" && s.is_joined) return false;
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     return (
@@ -197,6 +200,9 @@ function InformationSheetEntry() {
       (s.course || "").toLowerCase().includes(term)
     );
   });
+
+  const editingIsJoined =
+    sheets.find((s) => s.id === editingId)?.is_joined || false;
 
   const totalPages = Math.max(
     1,
@@ -469,6 +475,30 @@ function InformationSheetEntry() {
             </div>
           </div>
 
+          <div className="d-flex gap-2 flex-wrap mb-3">
+            <button
+              type="button"
+              className={`btn btn-sm ${joinFilter === "all" ? "btn-primary" : "btn-outline-primary"}`}
+              onClick={() => setJoinFilter("all")}
+            >
+              All Records
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${joinFilter === "joined" ? "btn-success" : "btn-outline-success"}`}
+              onClick={() => setJoinFilter("joined")}
+            >
+              <i className="bi bi-check-circle me-1"></i> Joined
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${joinFilter === "not_joined" ? "btn-secondary" : "btn-outline-secondary"}`}
+              onClick={() => setJoinFilter("not_joined")}
+            >
+              <i className="bi bi-x-circle me-1"></i> Not Joined
+            </button>
+          </div>
+
           <div className="input-group mb-3" style={{ maxWidth: "350px" }}>
             <span className="input-group-text bg-white">
               <i className="bi bi-search"></i>
@@ -508,7 +538,13 @@ function InformationSheetEntry() {
                       <td>{s.applicant_name || "-"}</td>
                       <td>{s.mobile_no || "-"}</td>
                       <td>{s.course_interested || "-"}</td>
-                      <td>{s.plan_to_join || "-"}</td>
+                      <td>
+                        {s.is_joined ? (
+                          <span className="badge bg-success">Joined</span>
+                        ) : (
+                          s.effective_plan_to_join || "-"
+                        )}
+                      </td>
                       <td className="d-flex gap-2">
                         <button
                           type="button"
@@ -923,18 +959,33 @@ function InformationSheetEntry() {
                   </div>
                   <div className="col-md-6">
                     <label className="form-label">Plan to Join</label>
-                    <select
-                      name="plan_to_join"
-                      className="form-select"
-                      value={formData.plan_to_join}
-                      onChange={handleChange}
-                    >
-                      <option value="">Select</option>
-                      <option value="Immediately">Immediately</option>
-                      <option value="Within a week">Within a week</option>
-                      <option value="Within a month">Within a month</option>
-                      <option value="Joined">Joined</option>
-                    </select>
+                    {editingIsJoined ? (
+                      <>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value="Joined"
+                          disabled
+                        />
+                        <div className="form-text">
+                          Auto-detected — this person is already in the
+                          Admission List.
+                        </div>
+                      </>
+                    ) : (
+                      <select
+                        name="plan_to_join"
+                        className="form-select"
+                        value={formData.plan_to_join}
+                        onChange={handleChange}
+                      >
+                        <option value="">Select</option>
+                        <option value="Immediately">Immediately</option>
+                        <option value="Within a week">Within a week</option>
+                        <option value="Within a month">Within a month</option>
+                        <option value="Joined">Joined</option>
+                      </select>
+                    )}
                   </div>
 
                   <div className="col-12">

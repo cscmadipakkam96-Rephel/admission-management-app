@@ -1,4 +1,12 @@
 const InformationSheet = require("../models/InformationSheet");
+const Admission = require("../models/Admission");
+
+// Normalizes a phone number to its last 10 digits so formatting
+// differences (+91 prefix, spaces, dashes) don't break matching.
+const normalizePhone = (value) => {
+  const digits = (value || "").replace(/\D/g, "");
+  return digits.slice(-10);
+};
 
 const FIELDS = [
   "applicant_name",
@@ -55,9 +63,31 @@ const getAllInformationSheets = async (req, res) => {
       where: { active: isActive, admin_id: req.admin.adminId },
       order: [["id", "DESC"]],
     });
+
+    const admissions = await Admission.findAll({
+      where: { admin_id: req.admin.adminId, active: true },
+      attributes: ["mobile_no"],
+    });
+    const admittedPhones = new Set(
+      admissions.map((a) => normalizePhone(a.mobile_no)).filter(Boolean)
+    );
+
+    const data = sheets.map((s) => {
+      const sheetPhones = (s.mobile_no || "")
+        .split("/")
+        .map((p) => normalizePhone(p))
+        .filter(Boolean);
+      const is_joined = sheetPhones.some((p) => admittedPhones.has(p));
+      return {
+        ...s.toJSON(),
+        is_joined,
+        effective_plan_to_join: is_joined ? "Joined" : s.plan_to_join,
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: sheets,
+      data,
     });
   } catch (error) {
     res.status(500).json({
