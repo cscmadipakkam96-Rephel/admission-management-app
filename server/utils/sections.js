@@ -5,8 +5,6 @@ const SECTION_DAYS = {
     "Wednesday",
     "Thursday",
     "Friday",
-    "Saturday",
-    "Sunday",
   ],
   normal_mwf: ["Monday", "Wednesday", "Friday"],
   normal_tts: ["Tuesday", "Thursday", "Saturday"],
@@ -14,7 +12,7 @@ const SECTION_DAYS = {
 };
 
 const SECTION_LABELS = {
-  fast_track: "Fast Track (Every Day)",
+  fast_track: "Fast Track (Mon-Fri)",
   normal_mwf: "Normal Track (Mon/Wed/Fri)",
   normal_tts: "Normal Track (Tue/Thu/Sat)",
   weekend: "Weekend (Saturday)",

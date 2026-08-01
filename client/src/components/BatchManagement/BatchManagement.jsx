@@ -76,7 +76,7 @@ const CAL_DAYS_SUN_FIRST = [
 ];
 // Same section/day mapping used on the teacher side (server/utils/sections.js).
 const CAL_SECTION_DAYS = {
-  fast_track: [...CAL_DAYS],
+  fast_track: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   normal_mwf: ["Monday", "Wednesday", "Friday"],
   normal_tts: ["Tuesday", "Thursday", "Saturday"],
   weekend: ["Saturday"],
@@ -288,7 +288,7 @@ function GroupManagement() {
   const BATCH_ROWS_PER_PAGE = 10;
 
   const SECTIONS = [
-    { key: "fast_track", label: "Fast Track (Every Day)" },
+    { key: "fast_track", label: "Fast Track (Mon-Fri)" },
     { key: "normal_mwf", label: "Normal Track (Mon/Wed/Fri)" },
     { key: "normal_tts", label: "Normal Track (Tue/Thu/Sat)" },
     { key: "weekend", label: "Weekend (Saturday)" },
@@ -738,6 +738,25 @@ function GroupManagement() {
 
   const [draggedBatchId, setDraggedBatchId] = useState(null);
   const [dragOverSection, setDragOverSection] = useState(null);
+  const [sectionFilters, setSectionFilters] = useState({});
+
+  const getSectionFilter = (key) =>
+    sectionFilters[key] || { teacher: "", subject: "", startTime: "", endTime: "" };
+
+  const updateSectionFilter = (key, field, value) => {
+    setSectionFilters((prev) => ({
+      ...prev,
+      [key]: { ...getSectionFilter(key), [field]: value },
+    }));
+  };
+
+  const clearSectionFilter = (key) => {
+    setSectionFilters((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   const moveBatchToSection = async (batchId, newSection) => {
     try {
@@ -882,9 +901,45 @@ function GroupManagement() {
 
             <div className="row g-3">
               {SECTIONS.map((section) => {
-                const sectionBatches = batches.filter(
+                const sectionBatchesAll = batches.filter(
                   (b) => b.section === section.key
                 );
+                const sectionTeacherOptions = [
+                  ...new Map(
+                    sectionBatchesAll
+                      .filter((b) => b.Teacher)
+                      .map((b) => [b.Teacher.id, b.Teacher.teacher_name])
+                  ).entries(),
+                ];
+                const sectionSubjectOptions = [
+                  ...new Map(
+                    sectionBatchesAll
+                      .filter((b) => b.Subject)
+                      .map((b) => [b.Subject.id, subjectDisplayName(b.Subject)])
+                  ).entries(),
+                ];
+                const filter = getSectionFilter(section.key);
+                const filterActive =
+                  filter.teacher || filter.subject || filter.startTime || filter.endTime;
+                const sectionBatches = sectionBatchesAll.filter((b) => {
+                  if (filter.teacher && String(b.teacher_id) !== String(filter.teacher))
+                    return false;
+                  if (filter.subject && String(b.subject_id) !== String(filter.subject))
+                    return false;
+                  if (filter.startTime || filter.endTime) {
+                    const range = parseTimingRange(b.timing);
+                    if (!range) return false;
+                    if (filter.startTime) {
+                      const [fh, fm] = filter.startTime.split(":").map(Number);
+                      if (range.start < fh * 60 + fm) return false;
+                    }
+                    if (filter.endTime) {
+                      const [th, tm] = filter.endTime.split(":").map(Number);
+                      if (range.end > th * 60 + tm) return false;
+                    }
+                  }
+                  return true;
+                });
                 return (
                   <div className="col-md-6 col-lg-3" key={section.key}>
                     <div
@@ -903,7 +958,68 @@ function GroupManagement() {
                         setDraggedBatchId(null);
                       }}
                     >
-                      <h6 className="mb-2">{section.label}</h6>
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <h6 className="mb-0">{section.label}</h6>
+                        {filterActive && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-link p-0 text-decoration-none"
+                            onClick={() => clearSectionFilter(section.key)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <div className="mb-2 d-flex flex-column gap-1">
+                        <select
+                          className="form-select form-select-sm"
+                          value={filter.teacher}
+                          onChange={(e) =>
+                            updateSectionFilter(section.key, "teacher", e.target.value)
+                          }
+                        >
+                          <option value="">All Teachers</option>
+                          {sectionTeacherOptions.map(([id, name]) => (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="form-select form-select-sm"
+                          value={filter.subject}
+                          onChange={(e) =>
+                            updateSectionFilter(section.key, "subject", e.target.value)
+                          }
+                        >
+                          <option value="">All Subjects</option>
+                          {sectionSubjectOptions.map(([id, name]) => (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="d-flex gap-1">
+                          <input
+                            type="time"
+                            className="form-control form-control-sm"
+                            title="From start time"
+                            value={filter.startTime}
+                            onChange={(e) =>
+                              updateSectionFilter(section.key, "startTime", e.target.value)
+                            }
+                          />
+                          <input
+                            type="time"
+                            className="form-control form-control-sm"
+                            title="Up to end time"
+                            value={filter.endTime}
+                            onChange={(e) =>
+                              updateSectionFilter(section.key, "endTime", e.target.value)
+                            }
+                          />
+                        </div>
+                      </div>
                       <div
                         style={{ maxHeight: "520px", overflowY: "auto" }}
                         className="pe-1"
