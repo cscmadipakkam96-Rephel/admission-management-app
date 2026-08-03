@@ -66,8 +66,13 @@ function buildTimeSeriesData(admissions, startDate, endDate) {
     return created >= from && created <= to;
   });
 
+  // Diff midnight-to-midnight (not `to`'s 23:59:59) so a full 31-day month
+  // computes exactly 31, not 32 — the extra day was pushing it past the
+  // day-bucket threshold into month-bucketing, collapsing 31 days into
+  // a single "Jul 2026" point instead of a full daily trend line.
+  const toMidnight = new Date(`${endDate}T00:00:00`);
   const dayCount =
-    Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1;
+    Math.round((toMidnight - from) / (1000 * 60 * 60 * 24)) + 1;
 
   const buckets = new Map();
   const order = [];
