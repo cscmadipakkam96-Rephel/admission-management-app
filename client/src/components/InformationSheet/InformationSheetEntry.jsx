@@ -332,7 +332,10 @@ function InformationSheetEntry() {
       cleanValue = value
         .replace(/[^0-9:\sAaPpMmTtOo]/g, "")
         .replace(/am/gi, "AM")
-        .replace(/pm/gi, "PM");
+        .replace(/pm/gi, "PM")
+        // A dangling "to" with no time before AM/PM (e.g. "9:30 to PM")
+        // means the range was never finished — drop the stray "to".
+        .replace(/\bto\s+(?=AM\b|PM\b)/gi, "");
     }
 
     setFormData((prev) => ({
