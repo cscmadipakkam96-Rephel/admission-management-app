@@ -10,6 +10,7 @@ const normalizePhone = (value) => {
 
 const FIELDS = [
   "applicant_name",
+  "initial",
   "father_husband_name",
   "address",
   "mobile_no",

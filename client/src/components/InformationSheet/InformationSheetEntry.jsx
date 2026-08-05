@@ -8,6 +8,7 @@ import API from "../../api/api";
 
 const initialForm = {
   applicant_name: "",
+  initial: "",
   father_husband_name: "",
   address: "",
   mobile_no: "",
@@ -71,28 +72,6 @@ const QUALIFICATION_OPTIONS = [
   "Other",
 ];
 
-const HOURS = Array.from({ length: 12 }, (_, i) =>
-  String(i + 1).padStart(2, "0")
-);
-const MINUTES = Array.from({ length: 12 }, (_, i) =>
-  String(i * 5).padStart(2, "0")
-);
-
-const parseTime = (value) => {
-  const match = /^(\d{2}|--):(\d{2}|--) (AM|PM|--)$/.exec(value || "");
-  if (!match) return { hour: "", minute: "", period: "" };
-  return {
-    hour: match[1] === "--" ? "" : match[1],
-    minute: match[2] === "--" ? "" : match[2],
-    period: match[3] === "--" ? "" : match[3],
-  };
-};
-
-const composeTime = (hour, minute, period) => {
-  if (!hour && !minute && !period) return "";
-  return `${hour || "--"}:${minute || "--"} ${period || "--"}`;
-};
-
 const SOURCE_SUB_OPTIONS = {
   Newspaper: ["Hindu", "Dinathanthi", "Dinamalar", "Others"],
   Television: ["Sun TV", "Raj TV", "Vijay TV", "Jaya TV", "Others"],
@@ -109,6 +88,7 @@ const SOURCE_SUB_OPTIONS = {
 const VIEW_FIELDS = [
   { key: "sheet_date", label: "Date" },
   { key: "applicant_name", label: "Name" },
+  { key: "initial", label: "Initial" },
   { key: "father_husband_name", label: "Father's / Husband's Name" },
   { key: "address", label: "Address" },
   { key: "pin_code", label: "Pin Code" },
@@ -146,6 +126,7 @@ function InformationSheetEntry() {
   const viewModalRef = useRef(null);
 
   const [sheets, setSheets] = useState([]);
+  const [courseOptions, setCourseOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -175,6 +156,21 @@ function InformationSheetEntry() {
 
   useEffect(() => {
     fetchSheets();
+  }, []);
+
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const response = await API.get("/courses?active=true");
+        const names = (response.data.data || response.data)
+          .map((c) => c.course_name)
+          .filter(Boolean);
+        setCourseOptions([...new Set(names)]);
+      } catch {
+        setCourseOptions([]);
+      }
+    };
+    fetchCourses();
   }, []);
 
   useEffect(() => {
@@ -273,6 +269,7 @@ function InformationSheetEntry() {
     setEditingId(sheet.id);
     setFormData({
       applicant_name: sheet.applicant_name || "",
+      initial: sheet.initial || "",
       father_husband_name: sheet.father_husband_name || "",
       address: sheet.address || "",
       mobile_no: sheet.mobile_no || "",
@@ -332,17 +329,6 @@ function InformationSheetEntry() {
       ...prev,
       [name]: cleanValue,
     }));
-  };
-
-  const handleTimeChange = (part, value) => {
-    setFormData((prev) => {
-      const current = parseTime(prev.counselling_time);
-      const next = { ...current, [part]: value };
-      return {
-        ...prev,
-        counselling_time: composeTime(next.hour, next.minute, next.period),
-      };
-    });
   };
 
   const toggleUpdateChannel = (channel) => {
@@ -675,6 +661,17 @@ function InformationSheetEntry() {
                       onChange={handleChange}
                     />
                   </div>
+                  <div className="w-100"></div>
+                  <div className="col-md-2">
+                    <label className="form-label">Initial</label>
+                    <input
+                      type="text"
+                      name="initial"
+                      className="form-control"
+                      value={formData.initial}
+                      onChange={handleChange}
+                    />
+                  </div>
                   <div className="col-md-5">
                     <label className="form-label">Name</label>
                     <input
@@ -960,13 +957,25 @@ function InformationSheetEntry() {
                   </div>
                   <div className="col-md-6">
                     <label className="form-label">Course Interested to Join</label>
-                    <input
-                      type="text"
+                    <select
                       name="course_interested"
-                      className="form-control"
+                      className="form-select"
                       value={formData.course_interested}
                       onChange={handleChange}
-                    />
+                    >
+                      <option value="">Select</option>
+                      {formData.course_interested &&
+                        !courseOptions.includes(formData.course_interested) && (
+                          <option value={formData.course_interested}>
+                            {formData.course_interested}
+                          </option>
+                        )}
+                      {courseOptions.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="col-md-6">
@@ -1133,47 +1142,14 @@ function InformationSheetEntry() {
                       <label className="form-label d-block">
                         Counselling Time
                       </label>
-                      <div className="d-flex gap-2">
-                        <select
-                          className="form-select"
-                          value={parseTime(formData.counselling_time).hour}
-                          onChange={(e) =>
-                            handleTimeChange("hour", e.target.value)
-                          }
-                        >
-                          <option value="">HH</option>
-                          {HOURS.map((h) => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="form-select"
-                          value={parseTime(formData.counselling_time).minute}
-                          onChange={(e) =>
-                            handleTimeChange("minute", e.target.value)
-                          }
-                        >
-                          <option value="">MM</option>
-                          {MINUTES.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="form-select"
-                          value={parseTime(formData.counselling_time).period}
-                          onChange={(e) =>
-                            handleTimeChange("period", e.target.value)
-                          }
-                        >
-                          <option value="">--</option>
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
-                      </div>
+                      <input
+                        type="text"
+                        name="counselling_time"
+                        className="form-control"
+                        placeholder="e.g. 8:30 AM"
+                        value={formData.counselling_time}
+                        onChange={handleChange}
+                      />
                     </div>
                   </div>
                 </div>
