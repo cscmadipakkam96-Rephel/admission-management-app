@@ -325,6 +325,16 @@ function InformationSheetEntry() {
       cleanValue = value.replace(/\D/g, "").slice(0, MOBILE_SEGMENT_LENGTH);
     }
 
+    if (name === "counselling_time") {
+      // Only allow digits, ":", spaces, and the letters that spell
+      // "to"/"am"/"pm" (e.g. "8:30 AM", "4 to 8pm") — everything else
+      // is stripped as it's typed, and am/pm is auto-uppercased.
+      cleanValue = value
+        .replace(/[^0-9:\sAaPpMmTtOo]/g, "")
+        .replace(/am/gi, "AM")
+        .replace(/pm/gi, "PM");
+    }
+
     setFormData((prev) => ({
       ...prev,
       [name]: cleanValue,
@@ -1128,7 +1138,7 @@ function InformationSheetEntry() {
                         onChange={handleChange}
                       />
                     </div>
-                    <div className="col-md-2">
+                    <div className="col-md-3">
                       <label className="form-label">Counselling Date</label>
                       <input
                         type="date"
