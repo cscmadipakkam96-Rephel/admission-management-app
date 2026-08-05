@@ -45,6 +45,12 @@ const UPDATE_CHANNELS = ["SMS", "WhatsApp", "Telephone"];
 
 const MOBILE_SEGMENT_LENGTH = 10;
 
+// Matches "8:30 PM", "4 to 8pm", "9 to 10 PM" — one time, optionally a
+// "to <time>" range, ending in a mandatory AM/PM. Minutes (if given)
+// must be 00-59.
+const COUNSELLING_TIME_PATTERN =
+  /^\d{1,2}(:[0-5]\d)?\s*(to\s*\d{1,2}(:[0-5]\d)?)?\s*(AM|PM)$/;
+
 const PLAN_TO_JOIN_OPTIONS = [
   { value: "New", badge: "secondary" },
   { value: "Immediately", badge: "primary" },
@@ -335,7 +341,7 @@ function InformationSheetEntry() {
         .replace(/pm/gi, "PM")
         // A dangling "to" with no time before AM/PM (e.g. "9:30 to PM")
         // means the range was never finished — drop the stray "to".
-        .replace(/\bto\s+(?=AM\b|PM\b)/gi, "");
+        .replace(/\bto\s*(?=AM\b|PM\b)/gi, "");
     }
 
     setFormData((prev) => ({
@@ -376,11 +382,12 @@ function InformationSheetEntry() {
 
     if (
       formData.counselling_time.trim() &&
-      !/AM|PM/.test(formData.counselling_time)
+      !COUNSELLING_TIME_PATTERN.test(formData.counselling_time.trim())
     ) {
       setToast({
         variant: "danger",
-        message: "Counselling Time must include AM or PM (e.g. 8:30 AM).",
+        message:
+          "Counselling Time must be in this format: 8:30 PM or 4 to 8 PM.",
       });
       return;
     }
