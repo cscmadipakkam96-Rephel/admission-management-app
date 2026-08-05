@@ -370,6 +370,18 @@ function InformationSheetEntry() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (
+      formData.counselling_time.trim() &&
+      !/AM|PM/.test(formData.counselling_time)
+    ) {
+      setToast({
+        variant: "danger",
+        message: "Counselling Time must include AM or PM (e.g. 8:30 AM).",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload = {
