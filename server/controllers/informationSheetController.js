@@ -33,6 +33,7 @@ const FIELDS = [
   "preferred_timings",
   "plan_to_join",
   "heard_source",
+  "source",
   "interested_updates",
   "sheet_date",
   "enrol_no",

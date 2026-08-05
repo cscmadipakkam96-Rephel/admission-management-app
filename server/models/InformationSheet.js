@@ -114,6 +114,10 @@ const InformationSheet = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: true,
     },
+    source: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     interested_updates: {
       type: DataTypes.STRING(100),
       allowNull: true,

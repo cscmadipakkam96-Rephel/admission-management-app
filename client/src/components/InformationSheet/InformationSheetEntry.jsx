@@ -31,6 +31,7 @@ const initialForm = {
   preferred_timings: "",
   plan_to_join: "",
   heard_source: [],
+  source: "",
   interested_updates: [],
   sheet_date: "",
   enrol_no: "",
@@ -42,6 +43,8 @@ const initialForm = {
 };
 
 const UPDATE_CHANNELS = ["SMS", "WhatsApp", "Telephone"];
+
+const SOURCE_OPTIONS = ["Phone", "Direct", "Website", "Others"];
 
 const MOBILE_SEGMENT_LENGTH = 10;
 
@@ -116,6 +119,7 @@ const VIEW_FIELDS = [
   { key: "course_interested", label: "Course Interested to Join" },
   { key: "preferred_timings", label: "Preferred Timings" },
   { key: "effective_plan_to_join", label: "Plan to Join" },
+  { key: "source", label: "Source" },
   { key: "heard_source", label: "How Did You Know About Us" },
   { key: "interested_updates", label: "Interested in Updates Via" },
   { key: "enrol_no", label: "E.No" },
@@ -300,6 +304,7 @@ function InformationSheetEntry() {
       heard_source: sheet.heard_source
         ? sheet.heard_source.split(",").map((s) => s.trim())
         : [],
+      source: sheet.source || "",
       interested_updates: sheet.interested_updates
         ? sheet.interested_updates.split(",").map((s) => s.trim())
         : [],
@@ -550,6 +555,7 @@ function InformationSheetEntry() {
                   <th>Mobile</th>
                   <th>Telephone</th>
                   <th>Course Interested</th>
+                  <th>Source</th>
                   <th>Plan to Join</th>
                   <th>Action</th>
                 </tr>
@@ -557,7 +563,7 @@ function InformationSheetEntry() {
               <tbody>
                 {paginatedSheets.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted" colSpan={7}>
+                    <td className="text-center text-muted" colSpan={8}>
                       No information sheets found.
                     </td>
                   </tr>
@@ -569,6 +575,7 @@ function InformationSheetEntry() {
                       <td>{s.mobile_no || "-"}</td>
                       <td>{s.telephone_no || "-"}</td>
                       <td>{s.course_interested || "-"}</td>
+                      <td>{s.source || "-"}</td>
                       <td>
                         <span
                           className={`badge bg-${planToJoinBadgeClass(s.effective_plan_to_join)}`}
@@ -1050,6 +1057,22 @@ function InformationSheetEntry() {
                         ))}
                       </select>
                     )}
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Source</label>
+                    <select
+                      name="source"
+                      className="form-select"
+                      value={formData.source}
+                      onChange={handleChange}
+                    >
+                      <option value="">Select</option>
+                      {SOURCE_OPTIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="col-12">
