@@ -74,6 +74,54 @@ const blankSessionFormCard = () => ({
   attendance: {},
 });
 
+// 12-hour "8:00 am" / "12:00 pm" only — no 24-hour ("14:00"), no ranges
+// ("1 to 2 pm"), no free text. Teachers type these by hand, so the format
+// has to be unambiguous and easy to validate on submit.
+const TIME_12H_PATTERN = /^(1[0-2]|[1-9]):[0-5]\d (am|pm)$/;
+
+// Strips anything that can't appear in a valid entry as the teacher types,
+// and lower-cases "AM"/"PM"/"Am" etc. so the field always reads "am"/"pm".
+const sanitizeTime12Input = (raw) => {
+  const stripped = raw.replace(/[^0-9:apmAPM ]/g, "");
+  return stripped.replace(/am/gi, "am").replace(/pm/gi, "pm");
+};
+
+// "8:00 am" -> "08:00" for the API (server parses start/end as 24-hour and
+// Postgres TIME columns get in/out as plain HH:MM too).
+const to24HourTime = (value12) => {
+  const match = (value12 || "").match(/^(\d{1,2}):(\d{2}) (am|pm)$/);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const minute = match[2];
+  const period = match[3];
+  if (period === "pm" && hour !== 12) hour += 12;
+  if (period === "am" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${minute}`;
+};
+
+// Converts whatever the server hands back — an ISO timestamp (started_at/
+// ended_at) or a plain "HH:MM[:SS]" TIME string (in_time/out_time) — into
+// the "8:00 am" display format the text inputs use.
+const formatTime12 = (value) => {
+  if (!value) return "";
+  let hour;
+  let minute;
+  const plainMatch = String(value).match(/^(\d{1,2}):(\d{2})(:\d{2})?$/);
+  if (plainMatch) {
+    hour = parseInt(plainMatch[1], 10);
+    minute = plainMatch[2];
+  } else {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    hour = d.getHours();
+    minute = String(d.getMinutes()).padStart(2, "0");
+  }
+  const period = hour >= 12 ? "pm" : "am";
+  hour = hour % 12;
+  if (hour === 0) hour = 12;
+  return `${hour}:${minute} ${period}`;
+};
+
 function TeacherRegister() {
   // Reached via the Teacher Login page + cookie session (/teacher/dashboard,
   // wrapped in TeacherProtectedRoute which already verified the cookie and
@@ -432,14 +480,6 @@ function TeacherRegister() {
     }
   };
 
-  const toLocalTimeInput = (isoString) => {
-    if (!isoString) return "";
-    const d = new Date(isoString);
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
-  };
-
   const fetchOldTopicOptions = async (batchId) => {
     try {
       const response = await API.get(`/teacher-auth/batch-topics/${batchId}`);
@@ -514,14 +554,14 @@ function TeacherRegister() {
 
   const openEditSessionForm = (batchId, session) => {
     setSessionFormError("");
-    const startTime = toLocalTimeInput(session.started_at);
-    const endTime = toLocalTimeInput(session.ended_at);
+    const startTime = formatTime12(session.started_at);
+    const endTime = formatTime12(session.ended_at);
     const attendance = {};
     session.present.forEach((s) => {
       attendance[s.id] = {
         present: true,
-        in_time: s.in_time || startTime,
-        out_time: s.out_time || endTime,
+        in_time: formatTime12(s.in_time) || startTime,
+        out_time: formatTime12(s.out_time) || endTime,
       };
     });
     session.absent.forEach((s) => {
@@ -590,20 +630,33 @@ function TeacherRegister() {
       setSessionFormError("Date, start time, end time and topic are all required.");
       return;
     }
+    if (!TIME_12H_PATTERN.test(start_time) || !TIME_12H_PATTERN.test(end_time)) {
+      setSessionFormError('Start/End time must look like "8:00 am" or "12:00 pm".');
+      return;
+    }
+    const presentEntries = Object.entries(attendance).filter(([, v]) => v.present);
+    for (const [, v] of presentEntries) {
+      if (v.in_time && !TIME_12H_PATTERN.test(v.in_time)) {
+        setSessionFormError('In/Out time must look like "8:00 am" or "12:00 pm".');
+        return;
+      }
+      if (v.out_time && !TIME_12H_PATTERN.test(v.out_time)) {
+        setSessionFormError('In/Out time must look like "8:00 am" or "12:00 pm".');
+        return;
+      }
+    }
     setSessionFormSubmitting(true);
     setSessionFormError("");
     try {
-      const presentStudents = Object.entries(attendance)
-        .filter(([, v]) => v.present)
-        .map(([admission_id, v]) => ({
-          admission_id: Number(admission_id),
-          in_time: v.in_time || null,
-          out_time: v.out_time || null,
-        }));
+      const presentStudents = presentEntries.map(([admission_id, v]) => ({
+        admission_id: Number(admission_id),
+        in_time: v.in_time ? to24HourTime(v.in_time) : null,
+        out_time: v.out_time ? to24HourTime(v.out_time) : null,
+      }));
       const payload = {
         date,
-        start_time,
-        end_time,
+        start_time: to24HourTime(start_time),
+        end_time: to24HourTime(end_time),
         topic_covered: topic_covered.trim(),
         present_students: presentStudents,
       };
@@ -629,6 +682,21 @@ function TeacherRegister() {
         setAddSessionError("Date, start time, end time and topic are required for every class.");
         return;
       }
+      if (!TIME_12H_PATTERN.test(card.start_time) || !TIME_12H_PATTERN.test(card.end_time)) {
+        setAddSessionError('Start/End time must look like "8:00 am" or "12:00 pm".');
+        return;
+      }
+      for (const v of Object.values(card.attendance)) {
+        if (!v.present) continue;
+        if (v.in_time && !TIME_12H_PATTERN.test(v.in_time)) {
+          setAddSessionError('In/Out time must look like "8:00 am" or "12:00 pm".');
+          return;
+        }
+        if (v.out_time && !TIME_12H_PATTERN.test(v.out_time)) {
+          setAddSessionError('In/Out time must look like "8:00 am" or "12:00 pm".');
+          return;
+        }
+      }
     }
     setAddSessionSubmitting(true);
     setAddSessionError("");
@@ -639,14 +707,14 @@ function TeacherRegister() {
             .filter(([, v]) => v.present)
             .map(([admission_id, v]) => ({
               admission_id: Number(admission_id),
-              in_time: v.in_time || null,
-              out_time: v.out_time || null,
+              in_time: v.in_time ? to24HourTime(v.in_time) : null,
+              out_time: v.out_time ? to24HourTime(v.out_time) : null,
             }));
           return API.post("/teacher-auth/session/add", {
             batch_id: addSessionBatchId,
             date: card.date,
-            start_time: card.start_time,
-            end_time: card.end_time,
+            start_time: to24HourTime(card.start_time),
+            end_time: to24HourTime(card.end_time),
             topic_covered: card.topic_covered.trim(),
             present_students: presentStudents,
           });
@@ -686,22 +754,32 @@ function TeacherRegister() {
           <div className="col-md-3">
             <label className="form-label small mb-1">Start Time</label>
             <input
-              type="time"
+              type="text"
               className="form-control form-control-sm"
+              placeholder="8:00 am"
+              maxLength={8}
               value={sessionForm.start_time}
               onChange={(e) =>
-                setSessionForm((prev) => ({ ...prev, start_time: e.target.value }))
+                setSessionForm((prev) => ({
+                  ...prev,
+                  start_time: sanitizeTime12Input(e.target.value),
+                }))
               }
             />
           </div>
           <div className="col-md-3">
             <label className="form-label small mb-1">End Time</label>
             <input
-              type="time"
+              type="text"
               className="form-control form-control-sm"
+              placeholder="12:00 pm"
+              maxLength={8}
               value={sessionForm.end_time}
               onChange={(e) =>
-                setSessionForm((prev) => ({ ...prev, end_time: e.target.value }))
+                setSessionForm((prev) => ({
+                  ...prev,
+                  end_time: sanitizeTime12Input(e.target.value),
+                }))
               }
             />
           </div>
@@ -767,24 +845,36 @@ function TeacherRegister() {
                         <div className="d-flex align-items-center gap-1">
                           <label className="small text-muted mb-0">In</label>
                           <input
-                            type="time"
+                            type="text"
                             className="form-control form-control-sm"
                             style={{ width: "120px" }}
+                            placeholder="8:00 am"
+                            maxLength={8}
                             value={entry.in_time}
                             onChange={(e) =>
-                              updateSessionStudentTime(st.id, "in_time", e.target.value)
+                              updateSessionStudentTime(
+                                st.id,
+                                "in_time",
+                                sanitizeTime12Input(e.target.value)
+                              )
                             }
                           />
                         </div>
                         <div className="d-flex align-items-center gap-1">
                           <label className="small text-muted mb-0">Out</label>
                           <input
-                            type="time"
+                            type="text"
                             className="form-control form-control-sm"
                             style={{ width: "120px" }}
+                            placeholder="12:00 pm"
+                            maxLength={8}
                             value={entry.out_time}
                             onChange={(e) =>
-                              updateSessionStudentTime(st.id, "out_time", e.target.value)
+                              updateSessionStudentTime(
+                                st.id,
+                                "out_time",
+                                sanitizeTime12Input(e.target.value)
+                              )
                             }
                           />
                         </div>
@@ -855,21 +945,31 @@ function TeacherRegister() {
               <div className="col-md-3">
                 <label className="form-label small mb-1">Start Time</label>
                 <input
-                  type="time"
+                  type="text"
                   className="form-control form-control-sm"
+                  placeholder="8:00 am"
+                  maxLength={8}
                   value={card.start_time}
                   onChange={(e) =>
-                    updateSessionFormCard(card.key, "start_time", e.target.value)
+                    updateSessionFormCard(
+                      card.key,
+                      "start_time",
+                      sanitizeTime12Input(e.target.value)
+                    )
                   }
                 />
               </div>
               <div className="col-md-3">
                 <label className="form-label small mb-1">End Time</label>
                 <input
-                  type="time"
+                  type="text"
                   className="form-control form-control-sm"
+                  placeholder="12:00 pm"
+                  maxLength={8}
                   value={card.end_time}
-                  onChange={(e) => updateSessionFormCard(card.key, "end_time", e.target.value)}
+                  onChange={(e) =>
+                    updateSessionFormCard(card.key, "end_time", sanitizeTime12Input(e.target.value))
+                  }
                 />
               </div>
               <div className="col-md-3">
@@ -934,16 +1034,18 @@ function TeacherRegister() {
                             <div className="d-flex align-items-center gap-1">
                               <label className="small text-muted mb-0">In</label>
                               <input
-                                type="time"
+                                type="text"
                                 className="form-control form-control-sm"
                                 style={{ width: "120px" }}
+                                placeholder="8:00 am"
+                                maxLength={8}
                                 value={entry.in_time}
                                 onChange={(e) =>
                                   updateAddSessionStudentTime(
                                     card.key,
                                     st.id,
                                     "in_time",
-                                    e.target.value
+                                    sanitizeTime12Input(e.target.value)
                                   )
                                 }
                               />
@@ -951,16 +1053,18 @@ function TeacherRegister() {
                             <div className="d-flex align-items-center gap-1">
                               <label className="small text-muted mb-0">Out</label>
                               <input
-                                type="time"
+                                type="text"
                                 className="form-control form-control-sm"
                                 style={{ width: "120px" }}
+                                placeholder="12:00 pm"
+                                maxLength={8}
                                 value={entry.out_time}
                                 onChange={(e) =>
                                   updateAddSessionStudentTime(
                                     card.key,
                                     st.id,
                                     "out_time",
-                                    e.target.value
+                                    sanitizeTime12Input(e.target.value)
                                   )
                                 }
                               />
