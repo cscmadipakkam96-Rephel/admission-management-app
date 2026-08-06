@@ -163,6 +163,10 @@ function TeacherRegister() {
   const [addSessionForms, setAddSessionForms] = useState([]);
   const [addSessionSubmitting, setAddSessionSubmitting] = useState(false);
   const [addSessionError, setAddSessionError] = useState("");
+  // Per-card save-one-at-a-time state, keyed by card.key — independent of
+  // the bulk "Add Classes" submit below.
+  const [cardSubmittingKeys, setCardSubmittingKeys] = useState({});
+  const [cardErrors, setCardErrors] = useState({});
   const [oldTopicOptions, setOldTopicOptions] = useState([]);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
 
@@ -199,6 +203,16 @@ function TeacherRegister() {
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Once the last card is gone — whether removed by hand or saved
+  // individually — there's nothing left to add, so close the panel.
+  useEffect(() => {
+    if (addSessionBatchId && addSessionForms.length === 0) {
+      setAddSessionBatchId(null);
+      setCardErrors({});
+      setCardSubmittingKeys({});
+    }
+  }, [addSessionForms, addSessionBatchId]);
 
   const handleTeacherLogout = async () => {
     try {
@@ -511,6 +525,8 @@ function TeacherRegister() {
     setAddSessionBatchId(null);
     setAddSessionForms([]);
     setAddSessionError("");
+    setCardErrors({});
+    setCardSubmittingKeys({});
   };
 
   const addAnotherSessionFormCard = () => {
@@ -750,6 +766,76 @@ function TeacherRegister() {
     }
   };
 
+  // Saves just this one card so it can be checked and committed on its own,
+  // instead of waiting to submit every card in the panel together.
+  const submitSingleSessionCard = async (card) => {
+    if (!card.date || !card.start_time || !card.end_time || !card.topic_covered.trim()) {
+      setCardErrors((prev) => ({
+        ...prev,
+        [card.key]: "Date, start time, end time and topic are all required.",
+      }));
+      return;
+    }
+    if (!TIME_12H_PATTERN.test(card.start_time) || !TIME_12H_PATTERN.test(card.end_time)) {
+      setCardErrors((prev) => ({
+        ...prev,
+        [card.key]: 'Start/End time must look like "8:00 am" or "12:00 pm".',
+      }));
+      return;
+    }
+    for (const v of Object.values(card.attendance)) {
+      if (!v.present) continue;
+      if (
+        (v.in_time && !TIME_12H_PATTERN.test(v.in_time)) ||
+        (v.out_time && !TIME_12H_PATTERN.test(v.out_time))
+      ) {
+        setCardErrors((prev) => ({
+          ...prev,
+          [card.key]: 'In/Out time must look like "8:00 am" or "12:00 pm".',
+        }));
+        return;
+      }
+    }
+    setCardErrors((prev) => ({ ...prev, [card.key]: "" }));
+    setCardSubmittingKeys((prev) => ({ ...prev, [card.key]: true }));
+    try {
+      const presentStudents = Object.entries(card.attendance)
+        .filter(([, v]) => v.present)
+        .map(([admission_id, v]) => ({
+          admission_id: Number(admission_id),
+          in_time: v.in_time ? to24HourTime(v.in_time) : null,
+          out_time: v.out_time ? to24HourTime(v.out_time) : null,
+        }));
+      await API.post("/teacher-auth/session/add", {
+        batch_id: addSessionBatchId,
+        date: card.date,
+        start_time: to24HourTime(card.start_time),
+        end_time: to24HourTime(card.end_time),
+        topic_covered: card.topic_covered.trim(),
+        present_students: presentStudents,
+      });
+      setAddSessionForms((prev) => prev.filter((c) => c.key !== card.key));
+      setCardErrors((prev) => {
+        const next = { ...prev };
+        delete next[card.key];
+        return next;
+      });
+      await refreshBatchProgress();
+      setToast({ variant: "success", message: "Class added." });
+    } catch (err) {
+      setCardErrors((prev) => ({
+        ...prev,
+        [card.key]: err.response?.data?.message || "Failed to save this class.",
+      }));
+    } finally {
+      setCardSubmittingKeys((prev) => {
+        const next = { ...prev };
+        delete next[card.key];
+        return next;
+      });
+    }
+  };
+
   const renderSessionFormPanel = (studentsForBatch) => {
     if (!sessionForm) return null;
     return (
@@ -936,16 +1022,26 @@ function TeacherRegister() {
           <div key={card.key} className="border rounded p-3 mb-2 bg-white">
             <div className="d-flex justify-content-between align-items-center mb-2">
               <div className="fw-semibold small">Class {idx + 1}</div>
-              {addSessionForms.length > 1 && (
+              <div className="d-flex gap-1">
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-danger py-0 px-1"
-                  title="Remove this class"
-                  onClick={() => removeSessionFormCard(card.key)}
+                  className="btn btn-sm btn-outline-primary py-0 px-2"
+                  disabled={!!cardSubmittingKeys[card.key]}
+                  onClick={() => submitSingleSessionCard(card)}
                 >
-                  <i className="bi bi-trash"></i>
+                  {cardSubmittingKeys[card.key] ? "Saving..." : "Save"}
                 </button>
-              )}
+                {addSessionForms.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger py-0 px-1"
+                    title="Remove this class"
+                    onClick={() => removeSessionFormCard(card.key)}
+                  >
+                    <i className="bi bi-trash"></i>
+                  </button>
+                )}
+              </div>
             </div>
             <div className="row g-2">
               <div className="col-md-3">
@@ -1093,6 +1189,9 @@ function TeacherRegister() {
                 )}
               </div>
             </div>
+            {cardErrors[card.key] && (
+              <div className="text-danger small mt-2">{cardErrors[card.key]}</div>
+            )}
           </div>
         ))}
         <button
