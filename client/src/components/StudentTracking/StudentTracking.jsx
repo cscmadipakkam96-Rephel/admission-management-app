@@ -528,18 +528,30 @@ function StudentTracking() {
                                   {sub.completedTopics.length === 0 ? (
                                     <div className="text-muted small">None yet</div>
                                   ) : (
-                                    sub.completedTopics.map((t) => (
-                                      <div key={t.date} className="small">
-                                        <span className="text-muted">{t.date}</span> —{" "}
-                                        {t.topic_covered}
-                                        {(t.in_time || t.out_time) && (
-                                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                                            <i className="bi bi-clock me-1"></i>
-                                            In: {t.in_time || "-"} — Out: {t.out_time || "-"}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))
+                                    <div className="table-responsive">
+                                      <table className="table table-sm table-bordered align-middle mb-0 small">
+                                        <thead className="table-light">
+                                          <tr>
+                                            <th style={{ width: "40px" }}>S.No</th>
+                                            <th>Covered Topics</th>
+                                            <th>In Time</th>
+                                            <th>Out Time</th>
+                                            <th>Date</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {sub.completedTopics.map((t, idx) => (
+                                            <tr key={t.date}>
+                                              <td>{idx + 1}</td>
+                                              <td>{t.topic_covered}</td>
+                                              <td>{t.in_time || "-"}</td>
+                                              <td>{t.out_time || "-"}</td>
+                                              <td>{t.date}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   )}
                                 </div>
                                 <div className="col-md-6">
