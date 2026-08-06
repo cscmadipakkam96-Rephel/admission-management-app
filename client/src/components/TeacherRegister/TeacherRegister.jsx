@@ -65,11 +65,11 @@ const isWithinClassTime = (timing) => {
 
 let sessionFormKeySeq = 0;
 const newSessionFormKey = () => `session-${Date.now()}-${sessionFormKeySeq++}`;
-const blankSessionFormCard = () => ({
+const blankSessionFormCard = ({ start_time = "", end_time = "" } = {}) => ({
   key: newSessionFormKey(),
   date: new Date().toISOString().slice(0, 10),
-  start_time: "",
-  end_time: "",
+  start_time,
+  end_time,
   topic_covered: "",
   attendance: {},
 });
@@ -489,10 +489,21 @@ function TeacherRegister() {
     }
   };
 
+  // The batch already has a fixed schedule (e.g. "8:00 AM - 12:00 PM"), so
+  // Start/End Time can default to it instead of starting blank each time.
+  const getBatchDefaultTiming = (batchId) => {
+    const batch = batchProgress.find((b) => b.id === batchId);
+    const [rawStart, rawEnd] = (batch?.timing || "").split(" - ").map((s) => s.trim());
+    return {
+      start_time: rawStart ? rawStart.toLowerCase() : "",
+      end_time: rawEnd ? rawEnd.toLowerCase() : "",
+    };
+  };
+
   const openAddSessionForm = (batchId) => {
     setAddSessionError("");
     setAddSessionBatchId(batchId);
-    setAddSessionForms([blankSessionFormCard()]);
+    setAddSessionForms([blankSessionFormCard(getBatchDefaultTiming(batchId))]);
     fetchOldTopicOptions(batchId);
   };
 
@@ -503,7 +514,10 @@ function TeacherRegister() {
   };
 
   const addAnotherSessionFormCard = () => {
-    setAddSessionForms((prev) => [...prev, blankSessionFormCard()]);
+    setAddSessionForms((prev) => [
+      ...prev,
+      blankSessionFormCard(getBatchDefaultTiming(addSessionBatchId)),
+    ]);
   };
 
   const removeSessionFormCard = (key) => {
@@ -525,10 +539,12 @@ function TeacherRegister() {
         if (current?.present) {
           attendance[studentId] = { present: false, in_time: "", out_time: "" };
         } else {
+          // In/Out is never defaulted from the class's Start/End Time here —
+          // the teacher fills each student's own time by hand.
           attendance[studentId] = {
             present: true,
-            in_time: current?.in_time || card.start_time,
-            out_time: current?.out_time || card.end_time,
+            in_time: current?.in_time || "",
+            out_time: current?.out_time || "",
           };
         }
         return { ...card, attendance };
