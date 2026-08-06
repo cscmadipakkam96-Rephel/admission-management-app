@@ -340,7 +340,23 @@ function TeacherManagement() {
   const copyLoginLink = async (teacher) => {
     const link = `${window.location.origin}/teacher-login/${teacher.slug}`;
     try {
-      await navigator.clipboard.writeText(link);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        // navigator.clipboard requires a secure context (HTTPS/localhost);
+        // fall back to the legacy execCommand approach so copying still
+        // works when the app is served over plain HTTP (e.g. AWS EC2 IP).
+        const textarea = document.createElement("textarea");
+        textarea.value = link;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error("execCommand copy failed");
+      }
       setToast({
         variant: "success",
         message: `Login link copied for ${teacher.teacher_name}`,
