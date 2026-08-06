@@ -63,6 +63,17 @@ const isWithinClassTime = (timing) => {
   return nowMinutes >= range.startMinutes && nowMinutes <= range.endMinutes;
 };
 
+let sessionFormKeySeq = 0;
+const newSessionFormKey = () => `session-${Date.now()}-${sessionFormKeySeq++}`;
+const blankSessionFormCard = () => ({
+  key: newSessionFormKey(),
+  date: new Date().toISOString().slice(0, 10),
+  start_time: "",
+  end_time: "",
+  topic_covered: "",
+  attendance: {},
+});
+
 function TeacherRegister() {
   // Reached via the Teacher Login page + cookie session (/teacher/dashboard,
   // wrapped in TeacherProtectedRoute which already verified the cookie and
@@ -97,6 +108,13 @@ function TeacherRegister() {
   const [sessionForm, setSessionForm] = useState(null);
   const [sessionFormSubmitting, setSessionFormSubmitting] = useState(false);
   const [sessionFormError, setSessionFormError] = useState("");
+  // Multiple missed classes for the same batch, added together in one go —
+  // each card is independent (own date/time/topic/attendance) until the
+  // final "Add Classes" submits them all.
+  const [addSessionBatchId, setAddSessionBatchId] = useState(null);
+  const [addSessionForms, setAddSessionForms] = useState([]);
+  const [addSessionSubmitting, setAddSessionSubmitting] = useState(false);
+  const [addSessionError, setAddSessionError] = useState("");
   const [oldTopicOptions, setOldTopicOptions] = useState([]);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
 
@@ -432,17 +450,66 @@ function TeacherRegister() {
   };
 
   const openAddSessionForm = (batchId) => {
-    setSessionFormError("");
-    setSessionForm({
-      batchId,
-      sessionId: null,
-      date: new Date().toISOString().slice(0, 10),
-      start_time: "",
-      end_time: "",
-      topic_covered: "",
-      attendance: {},
-    });
+    setAddSessionError("");
+    setAddSessionBatchId(batchId);
+    setAddSessionForms([blankSessionFormCard()]);
     fetchOldTopicOptions(batchId);
+  };
+
+  const closeAddSessionForm = () => {
+    setAddSessionBatchId(null);
+    setAddSessionForms([]);
+    setAddSessionError("");
+  };
+
+  const addAnotherSessionFormCard = () => {
+    setAddSessionForms((prev) => [...prev, blankSessionFormCard()]);
+  };
+
+  const removeSessionFormCard = (key) => {
+    setAddSessionForms((prev) => prev.filter((card) => card.key !== key));
+  };
+
+  const updateSessionFormCard = (key, field, value) => {
+    setAddSessionForms((prev) =>
+      prev.map((card) => (card.key === key ? { ...card, [field]: value } : card))
+    );
+  };
+
+  const toggleAddSessionPresentId = (key, studentId) => {
+    setAddSessionForms((prev) =>
+      prev.map((card) => {
+        if (card.key !== key) return card;
+        const current = card.attendance[studentId];
+        const attendance = { ...card.attendance };
+        if (current?.present) {
+          attendance[studentId] = { present: false, in_time: "", out_time: "" };
+        } else {
+          attendance[studentId] = {
+            present: true,
+            in_time: current?.in_time || card.start_time,
+            out_time: current?.out_time || card.end_time,
+          };
+        }
+        return { ...card, attendance };
+      })
+    );
+  };
+
+  const updateAddSessionStudentTime = (key, studentId, field, value) => {
+    setAddSessionForms((prev) =>
+      prev.map((card) =>
+        card.key !== key
+          ? card
+          : {
+              ...card,
+              attendance: {
+                ...card.attendance,
+                [studentId]: { ...card.attendance[studentId], [field]: value },
+              },
+            }
+      )
+    );
   };
 
   const openEditSessionForm = (batchId, session) => {
@@ -552,6 +619,50 @@ function TeacherRegister() {
       setSessionFormError(err.response?.data?.message || "Failed to save.");
     } finally {
       setSessionFormSubmitting(false);
+    }
+  };
+
+  const submitAddSessionForms = async () => {
+    if (!addSessionBatchId || addSessionForms.length === 0) return;
+    for (const card of addSessionForms) {
+      if (!card.date || !card.start_time || !card.end_time || !card.topic_covered.trim()) {
+        setAddSessionError("Date, start time, end time and topic are required for every class.");
+        return;
+      }
+    }
+    setAddSessionSubmitting(true);
+    setAddSessionError("");
+    try {
+      await Promise.all(
+        addSessionForms.map((card) => {
+          const presentStudents = Object.entries(card.attendance)
+            .filter(([, v]) => v.present)
+            .map(([admission_id, v]) => ({
+              admission_id: Number(admission_id),
+              in_time: v.in_time || null,
+              out_time: v.out_time || null,
+            }));
+          return API.post("/teacher-auth/session/add", {
+            batch_id: addSessionBatchId,
+            date: card.date,
+            start_time: card.start_time,
+            end_time: card.end_time,
+            topic_covered: card.topic_covered.trim(),
+            present_students: presentStudents,
+          });
+        })
+      );
+      const count = addSessionForms.length;
+      closeAddSessionForm();
+      await refreshBatchProgress();
+      setToast({
+        variant: "success",
+        message: count === 1 ? "Class added." : `${count} classes added.`,
+      });
+    } catch (err) {
+      setAddSessionError(err.response?.data?.message || "Failed to save one or more classes.");
+    } finally {
+      setAddSessionSubmitting(false);
     }
   };
 
@@ -706,6 +817,189 @@ function TeacherRegister() {
               Cancel
             </button>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAddSessionFormPanel = (studentsForBatch) => {
+    if (!addSessionBatchId) return null;
+    return (
+      <div className="border rounded p-3 mb-2 bg-light">
+        {addSessionForms.map((card, idx) => (
+          <div key={card.key} className="border rounded p-3 mb-2 bg-white">
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <div className="fw-semibold small">Class {idx + 1}</div>
+              {addSessionForms.length > 1 && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger py-0 px-1"
+                  title="Remove this class"
+                  onClick={() => removeSessionFormCard(card.key)}
+                >
+                  <i className="bi bi-trash"></i>
+                </button>
+              )}
+            </div>
+            <div className="row g-2">
+              <div className="col-md-3">
+                <label className="form-label small mb-1">Date</label>
+                <input
+                  type="date"
+                  className="form-control form-control-sm"
+                  max={new Date().toISOString().slice(0, 10)}
+                  value={card.date}
+                  onChange={(e) => updateSessionFormCard(card.key, "date", e.target.value)}
+                />
+              </div>
+              <div className="col-md-3">
+                <label className="form-label small mb-1">Start Time</label>
+                <input
+                  type="time"
+                  className="form-control form-control-sm"
+                  value={card.start_time}
+                  onChange={(e) =>
+                    updateSessionFormCard(card.key, "start_time", e.target.value)
+                  }
+                />
+              </div>
+              <div className="col-md-3">
+                <label className="form-label small mb-1">End Time</label>
+                <input
+                  type="time"
+                  className="form-control form-control-sm"
+                  value={card.end_time}
+                  onChange={(e) => updateSessionFormCard(card.key, "end_time", e.target.value)}
+                />
+              </div>
+              <div className="col-md-3">
+                <label className="form-label small mb-1">Use an already-covered topic</label>
+                <select
+                  className="form-select form-select-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      updateSessionFormCard(card.key, "topic_covered", e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">— pick one (optional) —</option>
+                  {oldTopicOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-12">
+                <label className="form-label small mb-1">Topic Covered</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="Type a topic, or pick one above"
+                  value={card.topic_covered}
+                  onChange={(e) =>
+                    updateSessionFormCard(card.key, "topic_covered", e.target.value)
+                  }
+                />
+              </div>
+              <div className="col-12">
+                <label className="form-label small mb-1 d-block">
+                  Who was present? (with their own in/out time)
+                </label>
+                {studentsForBatch.length === 0 ? (
+                  <div className="text-muted small">No students in this batch.</div>
+                ) : (
+                  studentsForBatch.map((st) => {
+                    const entry = card.attendance[st.id];
+                    const isPresent = !!entry?.present;
+                    return (
+                      <div
+                        key={st.id}
+                        className="d-flex align-items-center flex-wrap gap-2 border-bottom py-1"
+                      >
+                        <div className="form-check" style={{ minWidth: "160px" }}>
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={isPresent}
+                            onChange={() => toggleAddSessionPresentId(card.key, st.id)}
+                          />
+                          <label className="form-check-label small">
+                            {st.applicant_name}
+                          </label>
+                        </div>
+                        {isPresent && (
+                          <>
+                            <div className="d-flex align-items-center gap-1">
+                              <label className="small text-muted mb-0">In</label>
+                              <input
+                                type="time"
+                                className="form-control form-control-sm"
+                                style={{ width: "120px" }}
+                                value={entry.in_time}
+                                onChange={(e) =>
+                                  updateAddSessionStudentTime(
+                                    card.key,
+                                    st.id,
+                                    "in_time",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="d-flex align-items-center gap-1">
+                              <label className="small text-muted mb-0">Out</label>
+                              <input
+                                type="time"
+                                className="form-control form-control-sm"
+                                style={{ width: "120px" }}
+                                value={entry.out_time}
+                                onChange={(e) =>
+                                  updateAddSessionStudentTime(
+                                    card.key,
+                                    st.id,
+                                    "out_time",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary mb-2"
+          onClick={addAnotherSessionFormCard}
+        >
+          <i className="bi bi-plus-lg me-1"></i>
+          Add another class
+        </button>
+        {addSessionError && <div className="text-danger small mb-2">{addSessionError}</div>}
+        <div className="d-flex gap-2">
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={addSessionSubmitting}
+            onClick={submitAddSessionForms}
+          >
+            {addSessionSubmitting
+              ? "Saving..."
+              : addSessionForms.length > 1
+                ? "Add Classes"
+                : "Add Class"}
+          </button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={closeAddSessionForm}>
+            Cancel
+          </button>
         </div>
       </div>
     );
@@ -1330,7 +1624,7 @@ function TeacherRegister() {
                                 <div className="fw-semibold small">
                                   Covered Topics ({bp.sessions.length})
                                 </div>
-                                {!(sessionForm && sessionForm.batchId === bp.id && !sessionForm.sessionId) && (
+                                {addSessionBatchId !== bp.id && (
                                   <button
                                     type="button"
                                     className="btn btn-sm btn-outline-primary"
@@ -1344,10 +1638,8 @@ function TeacherRegister() {
                                   </button>
                                 )}
                               </div>
-                              {sessionForm &&
-                                sessionForm.batchId === bp.id &&
-                                !sessionForm.sessionId &&
-                                renderSessionFormPanel(bp.students)}
+                              {addSessionBatchId === bp.id &&
+                                renderAddSessionFormPanel(bp.students)}
                               {bp.sessions.length === 0 ? (
                                 <div className="text-muted small">
                                   No topics recorded for this batch yet.
