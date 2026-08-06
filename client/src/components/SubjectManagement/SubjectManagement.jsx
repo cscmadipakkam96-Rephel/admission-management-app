@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
+import SubjectCompletionChart from "../SubjectCompletionChart/SubjectCompletionChart";
 
 const initialSubjectForm = {
   subject_name: "",
@@ -872,6 +873,8 @@ function SubjectManagement() {
           </div>
         </div>
       </div>
+
+      <SubjectCompletionChart />
     </div>
   );
 }
