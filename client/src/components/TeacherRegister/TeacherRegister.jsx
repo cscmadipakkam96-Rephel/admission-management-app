@@ -77,7 +77,9 @@ const blankSessionFormCard = ({ start_time = "", end_time = "" } = {}) => ({
 // 12-hour "8:00 am" / "12:00 pm" only — no 24-hour ("14:00"), no ranges
 // ("1 to 2 pm"), no free text. Teachers type these by hand, so the format
 // has to be unambiguous and easy to validate on submit.
-const TIME_12H_PATTERN = /^(1[0-2]|[1-9]):[0-5]\d (am|pm)$/;
+// Leading zero is optional — "5:00 pm" and "05:00 pm" (the latter is how
+// Batch Management stores/defaults its own timing) must both validate.
+const TIME_12H_PATTERN = /^(1[0-2]|0?[1-9]):[0-5]\d (am|pm)$/;
 
 // Strips anything that can't appear in a valid entry as the teacher types,
 // and lower-cases "AM"/"PM"/"Am" etc. so the field always reads "am"/"pm".
