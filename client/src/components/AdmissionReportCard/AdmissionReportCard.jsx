@@ -7,6 +7,16 @@ const toDateStr = (date) => {
   return `${y}-${m}-${d}`;
 };
 
+// Admission Date is the business-meaning date the office actually cares
+// about (and can edit); created_at is only a fallback for the rare record
+// where admission_date was never filled in — otherwise that record would
+// have no date to report against at all.
+const effectiveAdmissionDate = (a) => {
+  if (a.admission_date) return a.admission_date;
+  if (a.created_at) return a.created_at.slice(0, 10);
+  return null;
+};
+
 const QUICK_RANGES = [
   { key: "today", label: "Today" },
   { key: "week", label: "This Week" },
@@ -26,18 +36,18 @@ function AdmissionReportCard({
   const todayStr = toDateStr(new Date());
   const earliestDateStr =
     admissions.reduce((min, a) => {
-      if (!a.created_at) return min;
-      const d = a.created_at.slice(0, 10);
+      const d = effectiveAdmissionDate(a);
+      if (!d) return min;
       return !min || d < min ? d : min;
     }, null) || todayStr;
-  // "All Time" must cover every record even if one was created "in the
-  // future" relative to the viewer's current clock (e.g. entered on a
-  // machine slightly ahead, or just past midnight) — so its upper bound is
-  // whichever is later: today, or the latest admission's own date.
+  // "All Time" must cover every record even if one is dated "in the
+  // future" relative to the viewer's current clock (e.g. a forward-dated
+  // admission, or entered on a machine slightly ahead) — so its upper bound
+  // is whichever is later: today, or the latest admission's own date.
   const latestDateStr =
     admissions.reduce((max, a) => {
-      if (!a.created_at) return max;
-      const d = a.created_at.slice(0, 10);
+      const d = effectiveAdmissionDate(a);
+      if (!d) return max;
       return !max || d > max ? d : max;
     }, null) || todayStr;
   const allTimeEndStr = latestDateStr > todayStr ? latestDateStr : todayStr;
@@ -112,8 +122,8 @@ function AdmissionReportCard({
   };
 
   const dateFilteredAdmissions = admissions.filter((a) => {
-    if (!a.created_at) return false;
-    const d = toDateStr(new Date(a.created_at));
+    const d = effectiveAdmissionDate(a);
+    if (!d) return false;
     return d >= startDate && d <= endDate;
   });
 
