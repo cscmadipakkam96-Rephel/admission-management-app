@@ -65,7 +65,7 @@ const CAL_DAYS_SUN_FIRST = [
 ];
 // Same section/day mapping used on the teacher side (server/utils/sections.js).
 const CAL_SECTION_DAYS = {
-  fast_track: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  fast_track: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
   normal_mwf: ["Monday", "Wednesday", "Friday"],
   normal_tts: ["Tuesday", "Thursday", "Saturday"],
   weekend: ["Saturday"],
@@ -277,7 +277,7 @@ function GroupManagement() {
   const BATCH_ROWS_PER_PAGE = 10;
 
   const SECTIONS = [
-    { key: "fast_track", label: "Fast Track (Mon-Fri)" },
+    { key: "fast_track", label: "Fast Track (Mon-Sat)" },
     { key: "normal_mwf", label: "Normal Track (Mon/Wed/Fri)" },
     { key: "normal_tts", label: "Normal Track (Tue/Thu/Sat)" },
     { key: "weekend", label: "Weekend (Saturday)" },

@@ -17,7 +17,7 @@ const DAYS_OF_WEEK = [
 // section fixes which days it runs, so the weekly grid is computed here
 // rather than fetched.
 const SECTION_DAYS = {
-  fast_track: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  fast_track: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
   normal_mwf: ["Monday", "Wednesday", "Friday"],
   normal_tts: ["Tuesday", "Thursday", "Saturday"],
   weekend: ["Saturday"],

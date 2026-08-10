@@ -1,8 +1,8 @@
 const { sectionsOverlapOnDays, VALID_SECTIONS, SECTION_DAYS } = require("../sections");
 
 describe("sectionsOverlapOnDays", () => {
-  test("fast_track does not overlap with weekend (Mon-Fri vs Saturday)", () => {
-    expect(sectionsOverlapOnDays("fast_track", "weekend")).toBe(false);
+  test("fast_track overlaps with weekend (both now include Saturday)", () => {
+    expect(sectionsOverlapOnDays("fast_track", "weekend")).toBe(true);
   });
 
   test("fast_track overlaps with normal_mwf (shares Monday/Wednesday/Friday)", () => {
@@ -21,8 +21,8 @@ describe("sectionsOverlapOnDays", () => {
 });
 
 describe("SECTION_DAYS", () => {
-  test("fast_track excludes Saturday and Sunday", () => {
-    expect(SECTION_DAYS.fast_track).not.toContain("Saturday");
+  test("fast_track includes Saturday but excludes Sunday", () => {
+    expect(SECTION_DAYS.fast_track).toContain("Saturday");
     expect(SECTION_DAYS.fast_track).not.toContain("Sunday");
   });
 });
