@@ -7,6 +7,7 @@ const Admission = require("../models/Admission");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
+const FeePayment = require("../models/FeePayment");
 const { parseTimeRange, rangesOverlap } = require("../utils/timeRange");
 const {
   VALID_SECTIONS,
@@ -756,6 +757,9 @@ const getStudentTracking = async (req, res) => {
             id: student.id,
             applicant_name: student.applicant_name,
             comn_enrol_no: student.comn_enrol_no,
+            course_name: student.course_name,
+            admission_date: student.admission_date,
+            total_fee: student.total_fee,
             subjects: [],
           });
         }
@@ -780,6 +784,18 @@ const getStudentTracking = async (req, res) => {
       });
     });
 
+    // Fee summary — one query for every student already gathered above,
+    // grouped in memory (same pattern as the Attendance/BatchSession
+    // lookups), so this stays a single extra round trip regardless of how
+    // many students are on screen. Read-only: never writes to fee_payments.
+    const studentIds = Array.from(studentMap.keys());
+    const feePayments = studentIds.length
+      ? await FeePayment.findAll({
+          where: { admission_id: studentIds, active: true },
+          order: [["paid_date", "DESC"]],
+        })
+      : [];
+
     // Per-student overall attendance summary — across every subject/batch
     // combined, using the same completed/missed topic data above.
     const data = Array.from(studentMap.values()).map((student) => {
@@ -792,6 +808,23 @@ const getStudentTracking = async (req, res) => {
       const lastAttendedDate = allAttendedDates.length
         ? allAttendedDates.sort().at(-1)
         : null;
+
+      const payments = feePayments.filter((p) => p.admission_id === student.id);
+      const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
+      const totalFee = student.total_fee != null ? Number(student.total_fee) : null;
+      const balance = totalFee != null ? Math.max(0, totalFee - totalPaid) : null;
+      const paymentProgressPercent = totalFee
+        ? Math.min(100, Math.round((totalPaid / totalFee) * 100))
+        : null;
+      const feeStatus =
+        totalFee == null || totalFee === 0
+          ? "Fee Not Set"
+          : totalPaid <= 0
+            ? "Pending"
+            : totalPaid >= totalFee
+              ? "Paid"
+              : "Partially Paid";
+
       return {
         ...student,
         attendanceSummary: {
@@ -802,6 +835,19 @@ const getStudentTracking = async (req, res) => {
             ? Math.round((present / totalClasses) * 100)
             : 0,
           lastAttendedDate,
+        },
+        feeSummary: {
+          totalFee,
+          totalPaid,
+          balance,
+          paymentProgressPercent,
+          status: feeStatus,
+          paymentHistory: payments.map((p) => ({
+            date: p.paid_date,
+            amount: Number(p.amount_paid || 0),
+            payment_mode: p.payment_mode,
+            bill_no: p.bill_no,
+          })),
         },
       };
     });

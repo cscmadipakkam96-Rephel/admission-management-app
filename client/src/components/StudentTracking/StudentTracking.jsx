@@ -15,7 +15,29 @@ const EXPORT_COLUMNS = [
   { key: "batch_progress", label: "Batch Progress" },
   { key: "overall_attendance", label: "Overall Attendance %" },
   { key: "last_attended", label: "Last Attended" },
+  { key: "total_fee", label: "Total Fee" },
+  { key: "total_paid", label: "Paid" },
+  { key: "balance", label: "Balance" },
+  { key: "fee_status", label: "Fee Status" },
 ];
+
+const ATTENDANCE_BUCKET = (percent) =>
+  percent >= 75 ? "Good" : percent >= 50 ? "Warning" : "Low";
+
+const FEE_BADGE_CLASS = {
+  Paid: "text-bg-success",
+  "Partially Paid": "text-bg-warning",
+  Pending: "text-bg-danger",
+  "Fee Not Set": "text-bg-secondary",
+};
+
+const formatMonthLabel = (yearMonth) => {
+  const [y, m] = yearMonth.split("-");
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+};
 
 function StudentTracking() {
   const [students, setStudents] = useState([]);
@@ -25,6 +47,8 @@ function StudentTracking() {
   const [subjectFilter, setSubjectFilter] = useState("");
   const [teacherFilter, setTeacherFilter] = useState("");
   const [batchFilter, setBatchFilter] = useState("");
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState("");
+  const [feeStatusFilter, setFeeStatusFilter] = useState("");
   const [expandedStudentId, setExpandedStudentId] = useState(null);
   const [expandedSubjectKey, setExpandedSubjectKey] = useState(null);
 
@@ -66,20 +90,37 @@ function StudentTracking() {
   );
 
   const hasActiveSubjectFilters = subjectFilter || teacherFilter || batchFilter;
+  const hasAnyFilter =
+    searchTerm || hasActiveSubjectFilters || attendanceStatusFilter || feeStatusFilter;
 
-  // Search narrows which students show up; the Subject/Teacher/Batch
-  // filters narrow which of that student's enrollments are shown — a
-  // student stays visible as long as at least one enrollment matches (or,
-  // with no filters active, everyone shows including the not-yet-enrolled).
+  // Search + Attendance Status + Fee Status narrow which STUDENTS show up at
+  // all (they're whole-student attributes). Subject/Teacher/Batch instead
+  // narrow which of that student's enrollments are shown — a student stays
+  // visible as long as at least one enrollment matches (or, with no
+  // subject/teacher/batch filter active, everyone shows).
   const filteredStudents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return students
-      .filter(
-        (s) =>
-          !term ||
-          (s.applicant_name || "").toLowerCase().includes(term) ||
-          (s.comn_enrol_no || "").toLowerCase().includes(term)
-      )
+      .filter((s) => {
+        if (
+          term &&
+          !(s.applicant_name || "").toLowerCase().includes(term) &&
+          !(s.comn_enrol_no || "").toLowerCase().includes(term)
+        ) {
+          return false;
+        }
+        if (
+          attendanceStatusFilter &&
+          ATTENDANCE_BUCKET(s.attendanceSummary.overallAttendancePercent) !==
+            attendanceStatusFilter
+        ) {
+          return false;
+        }
+        if (feeStatusFilter && s.feeSummary.status !== feeStatusFilter) {
+          return false;
+        }
+        return true;
+      })
       .map((s) => {
         const subjects = s.subjects.filter(
           (sub) =>
@@ -90,7 +131,8 @@ function StudentTracking() {
         // The summary cards must reflect only what's currently shown —
         // recompute from the filtered subjects instead of trusting the
         // server's all-subjects totals, or the numbers won't match what's
-        // visible on screen.
+        // visible on screen. Fee data is a whole-student attribute, not
+        // per-subject, so it's left untouched (carried through via ...s).
         const attendanceSummary = hasActiveSubjectFilters
           ? (() => {
               const totalClasses = subjects.reduce((sum, sub) => sum + sub.totalTopics, 0);
@@ -111,18 +153,35 @@ function StudentTracking() {
         return { ...s, subjects, attendanceSummary };
       })
       .filter((s) => s.subjects.length > 0 || !hasActiveSubjectFilters);
-  }, [students, searchTerm, subjectFilter, teacherFilter, batchFilter, hasActiveSubjectFilters]);
+  }, [
+    students,
+    searchTerm,
+    subjectFilter,
+    teacherFilter,
+    batchFilter,
+    attendanceStatusFilter,
+    feeStatusFilter,
+    hasActiveSubjectFilters,
+  ]);
 
   const clearFilters = () => {
     setSearchTerm("");
     setSubjectFilter("");
     setTeacherFilter("");
     setBatchFilter("");
+    setAttendanceStatusFilter("");
+    setFeeStatusFilter("");
   };
 
   const exportRows = () =>
-    filteredStudents.flatMap((s) =>
-      s.subjects.length === 0
+    filteredStudents.flatMap((s) => {
+      const feeCols = {
+        total_fee: s.feeSummary.totalFee != null ? s.feeSummary.totalFee : "-",
+        total_paid: s.feeSummary.totalPaid,
+        balance: s.feeSummary.balance != null ? s.feeSummary.balance : "-",
+        fee_status: s.feeSummary.status,
+      };
+      return s.subjects.length === 0
         ? [
             {
               applicant_name: s.applicant_name,
@@ -134,6 +193,7 @@ function StudentTracking() {
               batch_progress: "-",
               overall_attendance: `${s.attendanceSummary.overallAttendancePercent}%`,
               last_attended: s.attendanceSummary.lastAttendedDate || "-",
+              ...feeCols,
             },
           ]
         : s.subjects.map((sub) => ({
@@ -149,8 +209,9 @@ function StudentTracking() {
                 : "-",
             overall_attendance: `${s.attendanceSummary.overallAttendancePercent}%`,
             last_attended: s.attendanceSummary.lastAttendedDate || "-",
-          }))
-    );
+            ...feeCols,
+          }));
+    });
 
   const exportToExcel = () => {
     const data = exportRows().map((row) => {
@@ -215,7 +276,7 @@ function StudentTracking() {
         </div>
 
         <div className="row g-2 mb-3 align-items-end">
-          <div className="col-md-3">
+          <div className="col-md-2">
             <label className="form-label small mb-1">Search</label>
             <div className="input-group">
               <span className="input-group-text bg-white">
@@ -230,7 +291,7 @@ function StudentTracking() {
               />
             </div>
           </div>
-          <div className="col-6 col-md-3">
+          <div className="col-6 col-md-2">
             <label className="form-label small mb-1">Subject</label>
             <select
               className="form-select"
@@ -245,7 +306,7 @@ function StudentTracking() {
               ))}
             </select>
           </div>
-          <div className="col-6 col-md-3">
+          <div className="col-6 col-md-2">
             <label className="form-label small mb-1">Teacher</label>
             <select
               className="form-select"
@@ -275,8 +336,35 @@ function StudentTracking() {
               ))}
             </select>
           </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small mb-1">Attendance</label>
+            <select
+              className="form-select"
+              value={attendanceStatusFilter}
+              onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+            >
+              <option value="">All Attendance</option>
+              <option value="Good">Good (≥75%)</option>
+              <option value="Warning">Warning (50–74%)</option>
+              <option value="Low">Low (&lt;50%)</option>
+            </select>
+          </div>
           <div className="col-6 col-md-1">
-            {(searchTerm || hasActiveSubjectFilters) && (
+            <label className="form-label small mb-1">Fee</label>
+            <select
+              className="form-select"
+              value={feeStatusFilter}
+              onChange={(e) => setFeeStatusFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              <option value="Paid">Paid</option>
+              <option value="Partially Paid">Partial</option>
+              <option value="Pending">Pending</option>
+              <option value="Fee Not Set">Not Set</option>
+            </select>
+          </div>
+          <div className="col-6 col-md-1">
+            {hasAnyFilter && (
               <button
                 type="button"
                 className="btn btn-outline-secondary w-100"
@@ -302,12 +390,38 @@ function StudentTracking() {
               (sub) => sub.studentCoveredAllSoFar
             ).length;
             const summary = student.attendanceSummary;
+            const fee = student.feeSummary;
             const summaryBadgeClass =
               summary.overallAttendancePercent >= 75
                 ? "text-bg-success"
                 : summary.overallAttendancePercent >= 50
                   ? "text-bg-warning"
                   : "text-bg-danger";
+            const feeBadgeClass = FEE_BADGE_CLASS[fee.status] || "text-bg-secondary";
+
+            const firstSub = student.subjects[0];
+            const batchTeacherHint =
+              subjectCount === 0
+                ? null
+                : subjectCount === 1
+                  ? `${firstSub.batch_name} · ${firstSub.teacher_name || "No teacher"}`
+                  : "Multiple batches";
+
+            // Attendance trend — how many classes were attended per
+            // calendar month, derived entirely from data already in the
+            // response (no extra backend field). Only worth a table once a
+            // student's attendance spans more than one month.
+            const attendedDates = student.subjects.flatMap((s) =>
+              s.completedTopics.map((t) => t.date)
+            );
+            const monthCounts = attendedDates.reduce((acc, d) => {
+              const month = d.slice(0, 7);
+              acc[month] = (acc[month] || 0) + 1;
+              return acc;
+            }, {});
+            const monthEntries = Object.entries(monthCounts).sort(([a], [b]) =>
+              a.localeCompare(b)
+            );
 
             return (
               <div key={student.id} className="border rounded-3 p-3 mb-3 shadow-sm">
@@ -332,13 +446,24 @@ function StudentTracking() {
                         <i className="bi bi-journal-bookmark me-1"></i>
                         {subjectCount} subject{subjectCount === 1 ? "" : "s"} —{" "}
                         {completedSubjectCount} fully covered so far
+                        {batchTeacherHint && (
+                          <>
+                            {" "}
+                            · <i className="bi bi-person-badge me-1"></i>
+                            {batchTeacherHint}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <span className={`badge ${summaryBadgeClass}`}>
                       <i className="bi bi-graph-up me-1"></i>
-                      {summary.overallAttendancePercent}% overall attendance
+                      {summary.overallAttendancePercent}% attendance
+                    </span>
+                    <span className={`badge ${feeBadgeClass}`}>
+                      <i className="bi bi-cash-coin me-1"></i>
+                      Fee: {fee.status}
                     </span>
                     <i
                       className={`bi ${isStudentOpen ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}
@@ -348,9 +473,21 @@ function StudentTracking() {
 
                 {isStudentOpen && (
                   <div className="mt-3">
+                    {/* Student Header */}
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                      <div className="text-uppercase text-muted small fw-bold">
-                        Overall Attendance Summary
+                      <div className="text-muted small">
+                        {student.course_name && (
+                          <span>
+                            <i className="bi bi-mortarboard me-1"></i>
+                            {student.course_name}
+                          </span>
+                        )}
+                        {student.admission_date && (
+                          <span className="ms-3">
+                            <i className="bi bi-calendar-event me-1"></i>
+                            Admitted: {student.admission_date}
+                          </span>
+                        )}
                       </div>
                       <Link
                         to={`/admissions/${student.id}/details`}
@@ -362,55 +499,44 @@ function StudentTracking() {
                       </Link>
                     </div>
 
+                    {/* Summary — Academic / Attendance / Fee at a glance */}
                     <div className="row g-2 mb-3">
-                      <div className="col-6 col-md-2">
+                      <div className="col-12 col-md-4">
                         <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
-                          <div className="fs-5 fw-bold text-primary">
+                          <div className="fs-6 fw-bold">
+                            {completedSubjectCount}/{subjectCount} subjects covered
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Academic Progress
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-4">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold">
                             {summary.overallAttendancePercent}%
                           </div>
                           <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                            Overall Attendance
+                            Attendance
                           </div>
                         </div>
                       </div>
-                      <div className="col-6 col-md-2">
+                      <div className="col-12 col-md-4">
                         <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
-                          <div className="fs-5 fw-bold">{summary.totalClasses}</div>
+                          <div className="fs-6 fw-bold">{fee.status}</div>
                           <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                            Total Classes
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-6 col-md-2">
-                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
-                          <div className="fs-5 fw-bold text-success">{summary.present}</div>
-                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                            Present
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-6 col-md-2">
-                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
-                          <div className="fs-5 fw-bold text-danger">{summary.absent}</div>
-                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                            Absent
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-6 col-md-4">
-                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
-                          <div className="fs-6 fw-bold">
-                            {summary.lastAttendedDate || "—"}
-                          </div>
-                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                            Last Attended Date
+                            Fee Status
                           </div>
                         </div>
                       </div>
                     </div>
 
+                    {/* Academic Details */}
+                    <div className="text-uppercase text-muted small fw-bold mb-2">
+                      Academic Progress
+                    </div>
                     {student.subjects.length === 0 ? (
-                      <div className="text-muted small">
+                      <div className="text-muted small mb-3">
                         {hasActiveSubjectFilters
                           ? "No enrollments match the selected filters."
                           : "Not enrolled in any batch yet."}
@@ -561,21 +687,32 @@ function StudentTracking() {
                                   {sub.missedTopics.length === 0 ? (
                                     <div className="text-muted small">None</div>
                                   ) : (
-                                    sub.missedTopics.map((t) => (
-                                      <div key={t.date} className="small">
-                                        <span className="text-muted">{t.date}</span> —{" "}
-                                        {t.topic_covered}
-                                        {(t.in_time || t.out_time) && (
-                                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                                            <i className="bi bi-clock me-1"></i>
-                                            In: {t.in_time || "-"} — Out: {t.out_time || "-"}
-                                          </div>
-                                        )}
-                                        <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                                          {t.reason}
-                                        </div>
-                                      </div>
-                                    ))
+                                    <div className="table-responsive">
+                                      <table className="table table-sm table-bordered align-middle mb-0 small">
+                                        <thead className="table-light">
+                                          <tr>
+                                            <th style={{ width: "40px" }}>S.No</th>
+                                            <th>Missed Topic</th>
+                                            <th>In Time</th>
+                                            <th>Out Time</th>
+                                            <th>Date</th>
+                                            <th>Reason</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {sub.missedTopics.map((t, idx) => (
+                                            <tr key={t.date}>
+                                              <td>{idx + 1}</td>
+                                              <td>{t.topic_covered}</td>
+                                              <td>{t.in_time || "-"}</td>
+                                              <td>{t.out_time || "-"}</td>
+                                              <td>{t.date}</td>
+                                              <td>{t.reason}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -583,6 +720,173 @@ function StudentTracking() {
                           </div>
                         );
                       })
+                    )}
+
+                    {/* Attendance Details */}
+                    <div className="text-uppercase text-muted small fw-bold mb-2 mt-3">
+                      Attendance
+                    </div>
+                    {summary.totalClasses > 0 && summary.overallAttendancePercent < 50 && (
+                      <div className="alert alert-danger py-1 px-2 small mb-2">
+                        <i className="bi bi-exclamation-triangle-fill me-1"></i>
+                        Low attendance — below 50%. This student may need attention.
+                      </div>
+                    )}
+                    {summary.totalClasses > 0 &&
+                      summary.overallAttendancePercent >= 50 &&
+                      summary.overallAttendancePercent < 75 && (
+                        <div className="alert alert-warning py-1 px-2 small mb-2">
+                          <i className="bi bi-exclamation-circle-fill me-1"></i>
+                          Attendance is below the recommended 75% threshold.
+                        </div>
+                      )}
+                    <div className="row g-2 mb-2">
+                      <div className="col-6 col-md-2">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-5 fw-bold text-primary">
+                            {summary.overallAttendancePercent}%
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Overall Attendance
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-5 fw-bold">{summary.totalClasses}</div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Total Classes
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-5 fw-bold text-success">{summary.present}</div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Present
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-5 fw-bold text-danger">{summary.absent}</div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Absent
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-4">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold">
+                            {summary.lastAttendedDate || "—"}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Last Attended Date
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    {monthEntries.length > 1 && (
+                      <div className="table-responsive mb-3">
+                        <table className="table table-sm table-bordered align-middle mb-0 small">
+                          <thead className="table-light">
+                            <tr>
+                              <th>Month</th>
+                              <th>Classes Attended</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {monthEntries.map(([month, count]) => (
+                              <tr key={month}>
+                                <td>{formatMonthLabel(month)}</td>
+                                <td>{count}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Fee Details */}
+                    <div className="text-uppercase text-muted small fw-bold mb-2 mt-3">
+                      Fee Status
+                    </div>
+                    <div className="mb-2">
+                      <span className={`badge ${feeBadgeClass}`}>
+                        <i className="bi bi-cash-coin me-1"></i>
+                        {fee.status}
+                      </span>
+                    </div>
+                    <div className="row g-2 mb-2">
+                      <div className="col-6 col-md-3">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold">
+                            {fee.totalFee != null ? `Rs. ${fee.totalFee}` : "Not set"}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Total Course Fee
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold text-success">Rs. {fee.totalPaid}</div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Total Paid
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold text-danger">
+                            {fee.balance != null ? `Rs. ${fee.balance}` : "-"}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Balance
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="border rounded-3 p-2 text-center h-100 bg-light-subtle">
+                          <div className="fs-6 fw-bold">
+                            {fee.paymentProgressPercent != null
+                              ? `${fee.paymentProgressPercent}%`
+                              : "-"}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            Payment Progress
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-muted small fw-semibold mb-1">
+                      Payment History ({fee.paymentHistory.length})
+                    </div>
+                    {fee.paymentHistory.length === 0 ? (
+                      <div className="text-muted small">No payments recorded yet</div>
+                    ) : (
+                      <div className="table-responsive">
+                        <table className="table table-sm table-bordered align-middle mb-0 small">
+                          <thead className="table-light">
+                            <tr>
+                              <th>Date</th>
+                              <th>Amount</th>
+                              <th>Payment Method</th>
+                              <th>Reference</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fee.paymentHistory.map((p, idx) => (
+                              <tr key={`${p.date}-${idx}`}>
+                                <td>{p.date || "-"}</td>
+                                <td>Rs. {p.amount}</td>
+                                <td>{p.payment_mode || "-"}</td>
+                                <td>{p.bill_no || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}
