@@ -48,4 +48,30 @@ describe("buildCommonEnrolNoMap", () => {
     expect(map.has(2)).toBe(false);
     expect(map.get(3)).toBe("M09C260002");
   });
+
+  test("letter-prefixed Enrol Nos rank after all plain-number ones, by insertion order", () => {
+    const admissions = [
+      { id: 1, admission_date: "2026-03-01", comn_enrol_no: "245" },
+      { id: 2, admission_date: "2026-03-02", comn_enrol_no: "271" },
+      { id: 3, admission_date: "2026-04-01", comn_enrol_no: "A001" },
+      { id: 4, admission_date: "2026-04-02", comn_enrol_no: "A002" },
+    ];
+    const map = buildCommonEnrolNoMap(admissions);
+    expect(map.get(1)).toBe("M09C260001"); // 245 -> rank 1
+    expect(map.get(2)).toBe("M09C260002"); // 271 -> rank 2
+    expect(map.get(3)).toBe("M09D260003"); // A001 -> rank 3, continues after the old series
+    expect(map.get(4)).toBe("M09D260004"); // A002 -> rank 4
+  });
+
+  test("letter-prefixed Enrol Nos rank by id even if entered out of typed order", () => {
+    const admissions = [
+      { id: 5, admission_date: "2026-04-02", comn_enrol_no: "A002" },
+      { id: 3, admission_date: "2026-04-01", comn_enrol_no: "A001" },
+    ];
+    const map = buildCommonEnrolNoMap(admissions);
+    // id 3 was inserted first, so it ranks first regardless of array order
+    // or which label ("A001" vs "A002") looks smaller.
+    expect(map.get(3)).toBe("M09D260001");
+    expect(map.get(5)).toBe("M09D260002");
+  });
 });

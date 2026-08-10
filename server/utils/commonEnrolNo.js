@@ -7,21 +7,38 @@ const MONTH_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L
 // "Common Enrol No" = M09 + month letter + year (2 digits) + a running
 // serial. Month/year come from admission_date, falling back to created_at
 // (Submitted On) when admission_date was never filled in — every admission
-// has one or the other. The serial is this admission's rank when every
-// admission is sorted by its existing Enrol No (comn_enrol_no) ascending —
-// that field is the institute's own ground-truth ordering, more reliable
-// than timestamps on bulk-entered historical records. Admissions with no
-// Enrol No at all get NO Common Enrol No — there's no ground-truth order to
-// rank them by, so making one up (e.g. a shared "0000") would misleadingly
-// suggest they're all the same record.
+// has one or the other. Admissions with no Enrol No at all get NO Common
+// Enrol No — there's no ground-truth order to rank them by, so making one
+// up (e.g. a shared "0000") would misleadingly suggest they're all the same
+// record.
+//
+// The serial is this admission's rank across two groups, in order:
+//   1. Old plain-number Enrol Nos ("245", "271", ...) — ranked ascending by
+//      that number. This is the institute's own ground-truth ordering for
+//      historical/bulk-entered records, more reliable than their DB
+//      insertion order.
+//   2. Newer letter-prefixed Enrol Nos ("A001", "A002", ...) that started
+//      once the old plain-number series ended — these don't parse as a
+//      leading number, so they can't be ranked against group 1 by value
+//      (e.g. "A001" would wrongly look smaller than "245"). They're instead
+//      ranked by insertion order (id), which is correct for records entered
+//      live, one at a time, going forward.
 const buildCommonEnrolNoMap = (admissions) => {
-  const withEnrol = admissions
-    .map((a) => ({ id: a.id, enrolNum: parseInt(a.comn_enrol_no, 10) }))
-    .filter((a) => Number.isFinite(a.enrolNum))
-    .sort((a, b) => a.enrolNum - b.enrolNum);
+  const withRaw = admissions
+    .map((a) => ({ id: a.id, raw: (a.comn_enrol_no || "").toString().trim() }))
+    .filter((a) => a.raw);
+
+  const oldFormat = withRaw
+    .map((a) => ({ ...a, num: parseInt(a.raw, 10) }))
+    .filter((a) => Number.isFinite(a.num))
+    .sort((a, b) => a.num - b.num);
+
+  const newFormat = withRaw
+    .filter((a) => !Number.isFinite(parseInt(a.raw, 10)))
+    .sort((a, b) => a.id - b.id);
 
   const rankById = new Map();
-  withEnrol.forEach((a, index) => rankById.set(a.id, index + 1));
+  [...oldFormat, ...newFormat].forEach((a, index) => rankById.set(a.id, index + 1));
 
   const map = new Map();
   admissions.forEach((a) => {

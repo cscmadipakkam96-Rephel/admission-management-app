@@ -220,14 +220,31 @@ function List() {
     }
 
     if (sortField === "comn_enrol_no") {
-      const numA = parseInt(valA.toString().replace(/\D/g, ""), 10);
-      const numB = parseInt(valB.toString().replace(/\D/g, ""), 10);
-      const hasNumA = !isNaN(numA);
-      const hasNumB = !isNaN(numB);
-      if (!hasNumA && !hasNumB) return 0;
-      if (!hasNumA) return 1;
-      if (!hasNumB) return -1;
-      const result = numA - numB;
+      const rawA = valA.toString();
+      const rawB = valB.toString();
+      if (!rawA && !rawB) return 0;
+      if (!rawA) return 1;
+      if (!rawB) return -1;
+
+      // Two eras of Enrol No coexist: old plain numbers ("245", "271") and
+      // newer letter-prefixed ones ("A001", "A002", ...) that started once
+      // the old series ended. A plain parseInt (no digit-stripping) tells
+      // them apart — it succeeds for a leading-digit string and fails
+      // (NaN) for a leading-letter one. Old-format entries sort among
+      // themselves by that number (unchanged); new-format entries sort
+      // among themselves by id (their real insertion order, since they're
+      // entered live going forward) — and as a whole, old-format entries
+      // always rank before new-format ones, since the new series only
+      // began after the old one ended.
+      const numA = parseInt(rawA, 10);
+      const numB = parseInt(rawB, 10);
+      const groupA = Number.isFinite(numA) ? 0 : 1;
+      const groupB = Number.isFinite(numB) ? 0 : 1;
+      if (groupA !== groupB) {
+        const result = groupA - groupB;
+        return sortOrder === "asc" ? result : -result;
+      }
+      const result = groupA === 0 ? numA - numB : a.id - b.id;
       return sortOrder === "asc" ? result : -result;
     }
 
