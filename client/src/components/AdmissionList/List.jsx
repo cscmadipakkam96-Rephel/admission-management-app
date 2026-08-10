@@ -206,19 +206,32 @@ function List() {
   const sortedAdmissions = [...filteredAdmissions].sort((a, b) => {
     const valA = a[sortField] ?? "";
     const valB = b[sortField] ?? "";
-    let result;
+
+    // Blank/unparseable values are anchored last regardless of sort
+    // direction — otherwise comparing a blank against a NaN/Invalid Date
+    // makes the comparator inconsistent from pair to pair, which breaks
+    // ordering for the whole list, not just the blank rows.
     if (sortField === "created_at" || sortField === "admission_date") {
-      result = new Date(valA) - new Date(valB);
-    } else if (sortField === "comn_enrol_no") {
+      if (!valA && !valB) return 0;
+      if (!valA) return 1;
+      if (!valB) return -1;
+      const result = new Date(valA) - new Date(valB);
+      return sortOrder === "asc" ? result : -result;
+    }
+
+    if (sortField === "comn_enrol_no") {
       const numA = parseInt(valA.toString().replace(/\D/g, ""), 10);
       const numB = parseInt(valB.toString().replace(/\D/g, ""), 10);
-      result =
-        !isNaN(numA) && !isNaN(numB)
-          ? numA - numB
-          : valA.toString().localeCompare(valB.toString());
-    } else {
-      result = valA.toString().localeCompare(valB.toString());
+      const hasNumA = !isNaN(numA);
+      const hasNumB = !isNaN(numB);
+      if (!hasNumA && !hasNumB) return 0;
+      if (!hasNumA) return 1;
+      if (!hasNumB) return -1;
+      const result = numA - numB;
+      return sortOrder === "asc" ? result : -result;
     }
+
+    const result = valA.toString().localeCompare(valB.toString());
     return sortOrder === "asc" ? result : -result;
   });
 
