@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import API from "../../api/api";
+import { parseTimingRange, matchTimingStatus } from "../../utils/timingMatch";
 
 const DAYS_OF_WEEK = [
   "Monday",
@@ -198,6 +199,9 @@ function TeacherRegister() {
   const [ownBatchErrors, setOwnBatchErrors] = useState({});
   const [ownBatchSubmitting, setOwnBatchSubmitting] = useState(false);
   const [deletingOwnBatchId, setDeletingOwnBatchId] = useState(null);
+  const ownBatchTimingRange = ownBatchForm
+    ? parseTimingRange(`${ownBatchForm.start_time} - ${ownBatchForm.end_time}`)
+    : null;
 
   const toggleSubject = (id) => {
     setExpandedSubjectIds((prev) => {
@@ -2312,24 +2316,47 @@ function TeacherRegister() {
                                 className="border rounded p-2 row g-2"
                                 style={{ maxHeight: "220px", overflowY: "auto" }}
                               >
-                                {ownBatchStudentOptions.map((a) => (
-                                  <div className="col-md-4" key={a.id}>
-                                    <div className="form-check">
-                                      <input
-                                        className="form-check-input"
-                                        type="checkbox"
-                                        checked={ownBatchSelectedStudentIds.includes(a.id)}
-                                        onChange={() => toggleOwnBatchStudent(a.id)}
-                                      />
-                                      <label className="form-check-label small">
-                                        {a.applicant_name}
-                                        {a.comn_enrol_no && (
-                                          <span className="text-muted"> ({a.comn_enrol_no})</span>
-                                        )}
-                                      </label>
+                                {ownBatchStudentOptions.map((a) => {
+                                  const timingStatus = matchTimingStatus(
+                                    a.timings,
+                                    ownBatchTimingRange?.start,
+                                    ownBatchTimingRange?.end
+                                  );
+                                  const timingBadge = {
+                                    match: { cls: "bg-success", text: "Time Matches" },
+                                    different: {
+                                      cls: "bg-warning text-dark",
+                                      text: "Different Timing",
+                                    },
+                                    unknown: { cls: "bg-secondary", text: "No timing info" },
+                                  }[timingStatus];
+                                  return (
+                                    <div className="col-md-4" key={a.id}>
+                                      <div className="form-check">
+                                        <input
+                                          className="form-check-input"
+                                          type="checkbox"
+                                          checked={ownBatchSelectedStudentIds.includes(a.id)}
+                                          onChange={() => toggleOwnBatchStudent(a.id)}
+                                        />
+                                        <label className="form-check-label small">
+                                          {a.applicant_name}
+                                          {a.comn_enrol_no && (
+                                            <span className="text-muted"> ({a.comn_enrol_no})</span>
+                                          )}
+                                          {ownBatchTimingRange && (
+                                            <span
+                                              className={`badge ${timingBadge.cls} ms-1`}
+                                              style={{ fontSize: "0.65rem" }}
+                                            >
+                                              {timingBadge.text}
+                                            </span>
+                                          )}
+                                        </label>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

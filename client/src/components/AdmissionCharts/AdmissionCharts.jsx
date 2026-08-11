@@ -288,6 +288,50 @@ const buildTimingChartData = (admissions, label, color) => {
   };
 };
 
+// Admission.timings is free-typed and often left blank — this surfaces,
+// per Subject, how many admitted students never filled it in, so admin can
+// follow up. A student's admission only has course_name, not a subject, so
+// this mirrors the same case-insensitive/trim course_name-matching pattern
+// batchController.js's getSubjectCompletionChart already uses server-side:
+// for each Subject, collect the course names of every course whose
+// syllabus includes it, then match admissions by course_name.
+const buildMissingTimingBySubjectData = (admissions, courses, label, color) => {
+  const courseNamesBySubject = new Map(); // subject_name -> Set(course_name lowercase-trimmed)
+  courses.forEach((c) => {
+    const courseName = (c.course_name || "").toLowerCase().trim();
+    (c.Subjects || []).forEach((s) => {
+      if (!courseNamesBySubject.has(s.subject_name)) {
+        courseNamesBySubject.set(s.subject_name, new Set());
+      }
+      courseNamesBySubject.get(s.subject_name).add(courseName);
+    });
+  });
+
+  const groups = {};
+  courseNamesBySubject.forEach((courseNames, subjectName) => {
+    const missing = admissions.filter(
+      (a) =>
+        courseNames.has((a.course_name || "").toLowerCase().trim()) &&
+        (!a.timings || !a.timings.trim())
+    );
+    if (missing.length > 0) groups[subjectName] = missing;
+  });
+
+  const labels = Object.keys(groups);
+  return {
+    labels,
+    datasets: [
+      {
+        label,
+        data: labels.map((l) => groups[l].length),
+        backgroundColor: color,
+        borderRadius: 4,
+      },
+    ],
+    groups,
+  };
+};
+
 const buildAgeChartData = (admissions, label, color) => {
   const groups = groupBy(admissions, (row) => {
     const age = row.age;
@@ -308,7 +352,7 @@ const buildAgeChartData = (admissions, label, color) => {
   };
 };
 
-function AdmissionCharts({ admissions, startDate, endDate, onSegmentClick }) {
+function AdmissionCharts({ admissions, courses = [], startDate, endDate, onSegmentClick }) {
   const lineChartRef = useRef(null);
   const barChartRefs = useRef({});
 
@@ -346,8 +390,12 @@ function AdmissionCharts({ admissions, startDate, endDate, onSegmentClick }) {
 
     const barWidth = (imgWidth - 10) / 2;
     let col = 0;
-    CHART_FIELDS.forEach((chart) => {
-      const chartInstance = barChartRefs.current[chart.field];
+    const barChartFieldKeys = [
+      ...CHART_FIELDS.map((chart) => chart.field),
+      "missing_timing_subject",
+    ];
+    barChartFieldKeys.forEach((fieldKey) => {
+      const chartInstance = barChartRefs.current[fieldKey];
       if (!chartInstance) return;
       const img = chartInstance.toBase64Image();
       const x = margin + col * (barWidth + 10);
@@ -451,6 +499,48 @@ function AdmissionCharts({ admissions, startDate, endDate, onSegmentClick }) {
             </div>
           );
         })}
+        {(() => {
+          const chartData = buildMissingTimingBySubjectData(
+            filteredAdmissions,
+            courses,
+            "Students with No Timing Set",
+            "#dc2626"
+          );
+          if (chartData.labels.length === 0) return null;
+          return (
+            <div className="col-md-6">
+              <div className="border rounded p-3 h-100">
+                <Bar
+                  ref={(el) => {
+                    barChartRefs.current["missing_timing_subject"] = el;
+                  }}
+                  data={chartData}
+                  options={{
+                    responsive: true,
+                    onClick: (_event, elements) => {
+                      if (!elements.length || !onSegmentClick) return;
+                      const clickedLabel = chartData.labels[elements[0].index];
+                      const matched = chartData.groups[clickedLabel] || [];
+                      onSegmentClick("Students with No Timing Set", clickedLabel, matched);
+                    },
+                    onHover: (event, elements) => {
+                      event.native.target.style.cursor = elements.length
+                        ? "pointer"
+                        : "default";
+                    },
+                    plugins: {
+                      legend: { display: false },
+                      title: { display: true, text: "Students with No Timing Set — by Subject" },
+                    },
+                    scales: {
+                      y: { beginAtZero: true, ticks: { precision: 0 } },
+                    },
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

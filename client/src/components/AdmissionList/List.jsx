@@ -541,6 +541,7 @@ function List() {
 
       <AdmissionCharts
         admissions={admissions}
+        courses={courses}
         startDate={chartRange.startDate}
         endDate={chartRange.endDate}
         onSegmentClick={handleChartSegmentClick}

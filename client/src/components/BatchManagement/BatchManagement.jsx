@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
 import SubjectCompletionChart from "../SubjectCompletionChart/SubjectCompletionChart";
+import { matchTimingStatus } from "../../utils/timingMatch";
 
 // A batch's Subject can itself be a sub-subject (has a Parent) — show both
 // so "GST" alone doesn't get shown without the "Tally" (or whichever)
@@ -550,6 +551,7 @@ function GroupManagement() {
     batchForm.endPeriod
       ? `${batchForm.startHour}:${batchForm.startMinute} ${batchForm.startPeriod} - ${batchForm.endHour}:${batchForm.endMinute} ${batchForm.endPeriod}`
       : "";
+  const batchTimingRange = parseTimingRange(batchTiming);
 
   useEffect(() => {
     if (!effectiveBatchSubjectId) {
@@ -2195,24 +2197,44 @@ function GroupManagement() {
                       </div>
                     ) : (
                       <div className="border rounded p-2 row g-2">
-                        {batchStudentOptions.map((a) => (
-                          <div className="col-md-4" key={a.id}>
-                            <div className="form-check">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                                checked={batchSelectedStudentIds.includes(a.id)}
-                                onChange={() => toggleBatchStudentSelection(a.id)}
-                              />
-                              <label className="form-check-label">
-                                {a.applicant_name}
-                                {a.comn_enrol_no && (
-                                  <span className="text-muted small"> ({a.comn_enrol_no})</span>
-                                )}
-                              </label>
+                        {batchStudentOptions.map((a) => {
+                          const timingStatus = matchTimingStatus(
+                            a.timings,
+                            batchTimingRange?.start,
+                            batchTimingRange?.end
+                          );
+                          const timingBadge = {
+                            match: { cls: "bg-success", text: "Time Matches" },
+                            different: { cls: "bg-warning text-dark", text: "Different Timing" },
+                            unknown: { cls: "bg-secondary", text: "No timing info" },
+                          }[timingStatus];
+                          return (
+                            <div className="col-md-4" key={a.id}>
+                              <div className="form-check">
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  checked={batchSelectedStudentIds.includes(a.id)}
+                                  onChange={() => toggleBatchStudentSelection(a.id)}
+                                />
+                                <label className="form-check-label">
+                                  {a.applicant_name}
+                                  {a.comn_enrol_no && (
+                                    <span className="text-muted small"> ({a.comn_enrol_no})</span>
+                                  )}
+                                  {batchTimingRange && (
+                                    <span
+                                      className={`badge ${timingBadge.cls} ms-1`}
+                                      style={{ fontSize: "0.65rem" }}
+                                    >
+                                      {timingBadge.text}
+                                    </span>
+                                  )}
+                                </label>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
