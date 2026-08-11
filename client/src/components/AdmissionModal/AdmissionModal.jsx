@@ -381,6 +381,8 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                     </div>
                   )}
                 </div>
+
+                <div className="w-100"></div>
                 <div className="col-md-3">
                   <label className="form-label">Father Initial</label>
                   <input
