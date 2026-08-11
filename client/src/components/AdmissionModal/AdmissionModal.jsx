@@ -8,6 +8,7 @@ const FIELD_LABELS = {
   applicant_name: "Name",
   initial: "Initial",
   father_husband_name: "Father's / Husband's Name",
+  father_initial: "Father Initial",
   guardian_occupation: "Occupation of Father / Guardian",
   date_of_birth: "Date of Birth",
   age: "Age",
@@ -26,7 +27,12 @@ const FIELD_LABELS = {
 
 const REQUIRED_FIELDS = [];
 
-const NAME_ONLY_FIELDS = ["applicant_name", "initial", "father_husband_name"];
+const NAME_ONLY_FIELDS = [
+  "applicant_name",
+  "initial",
+  "father_husband_name",
+  "father_initial",
+];
 const NAME_PATTERN = /[^a-zA-Z.'\s]/g;
 
 const DIGIT_ONLY_FIELDS = ["aadhar_no", "telephone_no", "mobile_no"];
@@ -62,6 +68,7 @@ const initialState = {
   applicant_name: "",
   initial: "",
   father_husband_name: "",
+  father_initial: "",
   guardian_occupation: "",
   date_of_birth: "",
   age: "",
@@ -371,6 +378,21 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                   {errors.applicant_name && (
                     <div className="invalid-feedback">
                       {errors.applicant_name}
+                    </div>
+                  )}
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label">Father Initial</label>
+                  <input
+                    type="text"
+                    name="father_initial"
+                    className={`form-control ${errors.father_initial ? "is-invalid" : ""}`}
+                    value={formData.father_initial}
+                    onChange={handleChange}
+                  />
+                  {errors.father_initial && (
+                    <div className="invalid-feedback">
+                      {errors.father_initial}
                     </div>
                   )}
                 </div>

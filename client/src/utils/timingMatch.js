@@ -17,10 +17,13 @@ const to24 = (t) => {
 
 // Parses a free-typed timing value into a { start, end } minutes-since-
 // midnight range. Handles "9-11am", "9:00 AM - 11:00 AM", "9 to 11", and a
-// single time ("9pm") — treated as a zero-width point. Returns null if it
-// can't confidently resolve AM/PM on at least one side (mirrors the
-// leniency of server/utils/timeRange.js's parseTimeRange: a missing AM/PM
-// on one side inherits the other side's).
+// single time ("9pm") — treated as a zero-width point. A missing AM/PM on
+// one side inherits the other side's (mirrors server/utils/timeRange.js's
+// parseTimeRange leniency); if NEITHER side has one at all (e.g. "10-12"),
+// defaults to PM — same convention AdmissionCharts.jsx's normalizeTiming
+// already uses for the same ambiguity, so "10-12" reads consistently
+// across the app instead of being unmatchable here. Returns null only for
+// genuinely unparseable text.
 export function parseTimingRange(raw) {
   if (!raw || !raw.trim()) return null;
   const normalized = raw.trim().replace(/\s*to\s*/gi, "-");
@@ -35,12 +38,13 @@ export function parseTimingRange(raw) {
     if (!a || !b) return null;
     if (!a.ampm && b.ampm) a.ampm = b.ampm;
     if (!b.ampm && a.ampm) b.ampm = a.ampm;
-    if (!a.ampm || !b.ampm) return null;
+    if (!a.ampm && !b.ampm) a.ampm = b.ampm = "PM";
     return { start: to24(a), end: to24(b) };
   }
   if (parts.length === 1) {
     const a = parseTimeToken(parts[0]);
-    if (!a || !a.ampm) return null;
+    if (!a) return null;
+    if (!a.ampm) a.ampm = "PM";
     const point = to24(a);
     return { start: point, end: point };
   }

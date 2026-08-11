@@ -19,6 +19,7 @@ const EXPORT_COLUMNS = [
   { key: "applicant_name", label: "Name" },
   { key: "initial", label: "Initial" },
   { key: "father_husband_name", label: "Father/Husband" },
+  { key: "father_initial", label: "Father Initial" },
   { key: "guardian_occupation", label: "Guardian Occupation" },
   { key: "date_of_birth", label: "DOB" },
   { key: "age", label: "Age" },

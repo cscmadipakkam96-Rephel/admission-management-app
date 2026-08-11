@@ -6,26 +6,9 @@
 // risk mangling a genuine two-word name.
 require("dotenv").config();
 const { Client } = require("pg");
+const { splitNameInitial } = require("../utils/splitNameInitial");
 
 const DRY_RUN = process.argv.includes("--dry-run");
-
-const splitNameInitial = (raw) => {
-  if (!raw || !raw.includes(".")) return null;
-
-  const segments = raw
-    .split(".")
-    .map((s) => s.trim().replace(/\s+/g, " "))
-    .filter((s) => s.length > 0);
-
-  if (segments.length < 2) return null;
-
-  const nameSegment = segments.reduce((a, b) => (b.length > a.length ? b : a));
-  const initialSegments = segments.filter((s) => s !== nameSegment);
-  if (initialSegments.length === 0) return null;
-
-  const initial = initialSegments.map((s) => s.toUpperCase() + ".").join("");
-  return { name: nameSegment, initial };
-};
 
 const run = async () => {
   const client = new Client({

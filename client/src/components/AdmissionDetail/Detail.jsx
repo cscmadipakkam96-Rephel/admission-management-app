@@ -19,7 +19,12 @@ const SELECT_OPTIONS = {
   ],
 };
 
-const NAME_ONLY_FIELDS = ["applicant_name", "initial", "father_husband_name"];
+const NAME_ONLY_FIELDS = [
+  "applicant_name",
+  "initial",
+  "father_husband_name",
+  "father_initial",
+];
 const NAME_PATTERN = /[^a-zA-Z.'\s]/g;
 
 const DIGIT_ONLY_FIELDS = ["aadhar_no", "telephone_no", "mobile_no"];
@@ -57,6 +62,7 @@ const FIELDS = [
   { key: "applicant_name", label: "Name", type: "text" },
   { key: "initial", label: "Initial", type: "text" },
   { key: "father_husband_name", label: "Father's / Husband's Name", type: "text" },
+  { key: "father_initial", label: "Father Initial", type: "text" },
   { key: "guardian_occupation", label: "Guardian Occupation", type: "text" },
   { key: "date_of_birth", label: "Date of Birth", type: "date" },
   { key: "age", label: "Age", type: "number" },

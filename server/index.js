@@ -4,8 +4,10 @@ dns.setDefaultResultOrder("ipv4first");
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const { Op } = require("sequelize");
 require("dotenv").config();
 const sequelize = require("./config/db");
+const { splitNameInitial } = require("./utils/splitNameInitial");
 const Admission = require("./models/Admission");
 const FeePayment = require("./models/FeePayment");
 const InformationSheet = require("./models/InformationSheet");
@@ -95,8 +97,42 @@ app.use("/api/expenses", requireAdminAuth, expenseRoutes);
 app.use("/api/entry-attendance", requireAdminAuth, entryAttendanceRoutes);
 app.use("/api/batches", requireAdminAuth, batchRoutes);
 
-sequelize.sync({ alter: true }).then(() => {
+// One-time, idempotent: splits any admission's father_husband_name that
+// still bundles a dot-separated initial (e.g. "R.Yasir") into
+// father_husband_name + father_initial, same rule as the existing
+// applicant_name/initial split (server/utils/splitNameInitial.js). Only
+// touches rows where father_initial hasn't been set yet, so this is a
+// no-op on every boot after the first successful run — safe to leave
+// running permanently rather than requiring a manual one-off script.
+const migrateFatherInitial = async () => {
+  const candidates = await Admission.findAll({
+    where: {
+      father_husband_name: { [Op.like]: "%.%" },
+      [Op.or]: [{ father_initial: null }, { father_initial: "" }],
+    },
+  });
+  let migrated = 0;
+  for (const admission of candidates) {
+    const result = splitNameInitial(admission.father_husband_name);
+    if (!result) continue;
+    await admission.update({
+      father_husband_name: result.name,
+      father_initial: result.initial,
+    });
+    migrated++;
+  }
+  if (migrated > 0) {
+    console.log(`Migrated father_initial for ${migrated} admission record(s).`);
+  }
+};
+
+sequelize.sync({ alter: true }).then(async () => {
   console.log("Admissions and FeePayments tables synced");
+  try {
+    await migrateFatherInitial();
+  } catch (err) {
+    console.error("father_initial migration failed:", err.message);
+  }
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
