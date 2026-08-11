@@ -12,6 +12,7 @@ const FIELDS = [
   "applicant_name",
   "initial",
   "father_husband_name",
+  "father_initial",
   "address",
   "mobile_no",
   "telephone_no",

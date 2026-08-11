@@ -30,6 +30,10 @@ const InformationSheet = sequelize.define(
       type: DataTypes.STRING(100),
       allowNull: true,
     },
+    father_initial: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     address: {
       type: DataTypes.TEXT,
       allowNull: true,

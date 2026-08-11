@@ -126,12 +126,61 @@ const migrateFatherInitial = async () => {
   }
 };
 
+// One-time, idempotent: same idea as migrateFatherInitial above, but for
+// Information Sheet's applicant_name/initial and father_husband_name/
+// father_initial pairs, neither of which was ever backfilled for existing
+// rows. Fetches every row missing either initial (not filtered by "."
+// in SQL, since splitNameInitial also handles the dot-less "Name A" case)
+// and only writes back rows where a split was actually found.
+const migrateInformationSheetNames = async () => {
+  const candidates = await InformationSheet.findAll({
+    where: {
+      [Op.or]: [
+        { initial: null },
+        { initial: "" },
+        { father_initial: null },
+        { father_initial: "" },
+      ],
+    },
+  });
+  let migrated = 0;
+  for (const sheet of candidates) {
+    const updates = {};
+    if (!sheet.initial && sheet.applicant_name) {
+      const result = splitNameInitial(sheet.applicant_name);
+      if (result) {
+        updates.applicant_name = result.name;
+        updates.initial = result.initial;
+      }
+    }
+    if (!sheet.father_initial && sheet.father_husband_name) {
+      const result = splitNameInitial(sheet.father_husband_name);
+      if (result) {
+        updates.father_husband_name = result.name;
+        updates.father_initial = result.initial;
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      await sheet.update(updates);
+      migrated++;
+    }
+  }
+  if (migrated > 0) {
+    console.log(`Migrated name/initial split for ${migrated} information sheet record(s).`);
+  }
+};
+
 sequelize.sync({ alter: true }).then(async () => {
   console.log("Admissions and FeePayments tables synced");
   try {
     await migrateFatherInitial();
   } catch (err) {
     console.error("father_initial migration failed:", err.message);
+  }
+  try {
+    await migrateInformationSheetNames();
+  } catch (err) {
+    console.error("information sheet name migration failed:", err.message);
   }
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

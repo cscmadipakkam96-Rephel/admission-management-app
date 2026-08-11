@@ -10,6 +10,7 @@ const initialForm = {
   applicant_name: "",
   initial: "",
   father_husband_name: "",
+  father_initial: "",
   address: "",
   mobile_no: "",
   telephone_no: "",
@@ -99,6 +100,7 @@ const VIEW_FIELDS = [
   { key: "applicant_name", label: "Name" },
   { key: "initial", label: "Initial" },
   { key: "father_husband_name", label: "Father's / Husband's Name" },
+  { key: "father_initial", label: "Father Initial" },
   { key: "address", label: "Address" },
   { key: "pin_code", label: "Pin Code" },
   { key: "mobile_no", label: "Mobile No" },
@@ -281,6 +283,7 @@ function InformationSheetEntry() {
       applicant_name: sheet.applicant_name || "",
       initial: sheet.initial || "",
       father_husband_name: sheet.father_husband_name || "",
+      father_initial: sheet.father_initial || "",
       address: sheet.address || "",
       mobile_no: sheet.mobile_no || "",
       telephone_no: sheet.telephone_no || "",
@@ -718,6 +721,17 @@ function InformationSheetEntry() {
                       name="applicant_name"
                       className="form-control"
                       value={formData.applicant_name}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="w-100"></div>
+                  <div className="col-md-2">
+                    <label className="form-label">Father Initial</label>
+                    <input
+                      type="text"
+                      name="father_initial"
+                      className="form-control"
+                      value={formData.father_initial}
                       onChange={handleChange}
                     />
                   </div>
