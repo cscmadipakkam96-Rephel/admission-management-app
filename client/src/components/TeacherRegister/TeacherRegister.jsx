@@ -557,12 +557,12 @@ function TeacherRegister() {
         if (current?.present) {
           attendance[studentId] = { present: false, in_time: "", out_time: "" };
         } else {
-          // In/Out is never defaulted from the class's Start/End Time here —
-          // the teacher fills each student's own time by hand.
+          // In/Out defaults to the class's own Start/End Time — the teacher
+          // can still edit either one per student if it was different.
           attendance[studentId] = {
             present: true,
-            in_time: current?.in_time || "",
-            out_time: current?.out_time || "",
+            in_time: current?.in_time || card.start_time,
+            out_time: current?.out_time || card.end_time,
           };
         }
         return { ...card, attendance };
