@@ -5,7 +5,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
 import SubjectCompletionChart from "../SubjectCompletionChart/SubjectCompletionChart";
-import { matchTimingStatus } from "../../utils/timingMatch";
+import { matchTimingStatus, TIMING_STATUS_TABS } from "../../utils/timingMatch";
 
 // A batch's Subject can itself be a sub-subject (has a Parent) — show both
 // so "GST" alone doesn't get shown without the "Tally" (or whichever)
@@ -268,6 +268,7 @@ function GroupManagement() {
   const [batchTeacherOptions, setBatchTeacherOptions] = useState([]);
   const [batchStudentOptions, setBatchStudentOptions] = useState([]);
   const [batchSelectedStudentIds, setBatchSelectedStudentIds] = useState([]);
+  const [studentTimingTab, setStudentTimingTab] = useState("match");
   const [pendingBatchDeleteId, setPendingBatchDeleteId] = useState(null);
   const [subjectTeachersCache, setSubjectTeachersCache] = useState({});
   const [batchSubstituteForm, setBatchSubstituteForm] = useState({});
@@ -564,6 +565,7 @@ function GroupManagement() {
   }, [effectiveBatchSubjectId]);
 
   useEffect(() => {
+    setStudentTimingTab("match");
     if (!effectiveBatchSubjectId) {
       setBatchStudentOptions([]);
       return;
@@ -580,10 +582,12 @@ function GroupManagement() {
     setBatchForm(initialBatchForm);
     setBatchFormErrors({});
     setBatchSelectedStudentIds([]);
+    setStudentTimingTab("match");
     Modal.getOrCreateInstance(batchModalRef.current).show();
   };
 
   const openEditBatchModal = (batch) => {
+    setStudentTimingTab("match");
     setBatchEditingId(batch.id);
     const [start, end] = (batch.timing || "").split(" - ");
     const [sh, rest] = (start || "").split(":");
@@ -2196,46 +2200,65 @@ function GroupManagement() {
                         No admitted students found for this subject.
                       </div>
                     ) : (
-                      <div className="border rounded p-2 row g-2">
-                        {batchStudentOptions.map((a) => {
-                          const timingStatus = matchTimingStatus(
+                      (() => {
+                        const studentsByTab = { match: [], different: [], unknown: [] };
+                        batchStudentOptions.forEach((a) => {
+                          const status = matchTimingStatus(
                             a.timings,
                             batchTimingRange?.start,
                             batchTimingRange?.end
                           );
-                          const timingBadge = {
-                            match: { cls: "bg-success", text: "Time Matches" },
-                            different: { cls: "bg-warning text-dark", text: "Different Timing" },
-                            unknown: { cls: "bg-secondary", text: "No timing info" },
-                          }[timingStatus];
-                          return (
-                            <div className="col-md-4" key={a.id}>
-                              <div className="form-check">
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  checked={batchSelectedStudentIds.includes(a.id)}
-                                  onChange={() => toggleBatchStudentSelection(a.id)}
-                                />
-                                <label className="form-check-label">
-                                  {a.applicant_name}
-                                  {a.comn_enrol_no && (
-                                    <span className="text-muted small"> ({a.comn_enrol_no})</span>
-                                  )}
-                                  {batchTimingRange && (
-                                    <span
-                                      className={`badge ${timingBadge.cls} ms-1`}
-                                      style={{ fontSize: "0.65rem" }}
-                                    >
-                                      {timingBadge.text}
-                                    </span>
-                                  )}
-                                </label>
-                              </div>
+                          studentsByTab[status].push(a);
+                        });
+                        const activeStudents = studentsByTab[studentTimingTab];
+                        return (
+                          <>
+                            <div className="d-flex gap-2 mb-2 flex-wrap">
+                              {TIMING_STATUS_TABS.map((tab) => (
+                                <button
+                                  key={tab.key}
+                                  type="button"
+                                  className={`btn btn-sm ${
+                                    studentTimingTab === tab.key ? tab.activeCls : tab.outlineCls
+                                  }`}
+                                  onClick={() => setStudentTimingTab(tab.key)}
+                                >
+                                  {tab.label} ({studentsByTab[tab.key].length})
+                                </button>
+                              ))}
                             </div>
-                          );
-                        })}
-                      </div>
+                            <div className="border rounded p-2 row g-2">
+                              {activeStudents.length === 0 ? (
+                                <div className="text-muted small">
+                                  No students in this category.
+                                </div>
+                              ) : (
+                                activeStudents.map((a) => (
+                                  <div className="col-md-4" key={a.id}>
+                                    <div className="form-check">
+                                      <input
+                                        className="form-check-input"
+                                        type="checkbox"
+                                        checked={batchSelectedStudentIds.includes(a.id)}
+                                        onChange={() => toggleBatchStudentSelection(a.id)}
+                                      />
+                                      <label className="form-check-label">
+                                        {a.applicant_name}
+                                        {a.comn_enrol_no && (
+                                          <span className="text-muted small">
+                                            {" "}
+                                            ({a.comn_enrol_no})
+                                          </span>
+                                        )}
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()
                     )}
                   </div>
                 </div>

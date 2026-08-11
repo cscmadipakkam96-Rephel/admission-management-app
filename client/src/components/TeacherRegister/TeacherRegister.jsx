@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import API from "../../api/api";
-import { parseTimingRange, matchTimingStatus } from "../../utils/timingMatch";
+import {
+  parseTimingRange,
+  matchTimingStatus,
+  TIMING_STATUS_TABS,
+} from "../../utils/timingMatch";
 
 const DAYS_OF_WEEK = [
   "Monday",
@@ -199,6 +203,7 @@ function TeacherRegister() {
   const [ownBatchErrors, setOwnBatchErrors] = useState({});
   const [ownBatchSubmitting, setOwnBatchSubmitting] = useState(false);
   const [deletingOwnBatchId, setDeletingOwnBatchId] = useState(null);
+  const [ownStudentTimingTab, setOwnStudentTimingTab] = useState("match");
   const ownBatchTimingRange = ownBatchForm
     ? parseTimingRange(`${ownBatchForm.start_time} - ${ownBatchForm.end_time}`)
     : null;
@@ -729,10 +734,12 @@ function TeacherRegister() {
     setOwnBatchSelectedStudentIds([]);
     setOwnBatchStudentOptions([]);
     setOwnBatchErrors({});
+    setOwnStudentTimingTab("match");
     if (ownBatchSubjects.length === 0) fetchOwnBatchSubjects();
   };
 
   const openEditOwnBatchForm = (bp) => {
+    setOwnStudentTimingTab("match");
     // bp comes from batchProgress — it has subject_name (not subject_id)
     // and a combined "start - end" timing string, so both need reversing
     // back into the form's separate fields.
@@ -761,6 +768,7 @@ function TeacherRegister() {
   const handleOwnBatchSubjectChange = (subjectId) => {
     setOwnBatchForm((prev) => ({ ...prev, subject_id: subjectId }));
     setOwnBatchSelectedStudentIds([]);
+    setOwnStudentTimingTab("match");
     fetchOwnBatchStudentOptions(subjectId);
   };
 
@@ -2312,52 +2320,72 @@ function TeacherRegister() {
                                 No admitted students found for this subject.
                               </div>
                             ) : (
-                              <div
-                                className="border rounded p-2 row g-2"
-                                style={{ maxHeight: "220px", overflowY: "auto" }}
-                              >
-                                {ownBatchStudentOptions.map((a) => {
-                                  const timingStatus = matchTimingStatus(
+                              (() => {
+                                const studentsByTab = { match: [], different: [], unknown: [] };
+                                ownBatchStudentOptions.forEach((a) => {
+                                  const status = matchTimingStatus(
                                     a.timings,
                                     ownBatchTimingRange?.start,
                                     ownBatchTimingRange?.end
                                   );
-                                  const timingBadge = {
-                                    match: { cls: "bg-success", text: "Time Matches" },
-                                    different: {
-                                      cls: "bg-warning text-dark",
-                                      text: "Different Timing",
-                                    },
-                                    unknown: { cls: "bg-secondary", text: "No timing info" },
-                                  }[timingStatus];
-                                  return (
-                                    <div className="col-md-4" key={a.id}>
-                                      <div className="form-check">
-                                        <input
-                                          className="form-check-input"
-                                          type="checkbox"
-                                          checked={ownBatchSelectedStudentIds.includes(a.id)}
-                                          onChange={() => toggleOwnBatchStudent(a.id)}
-                                        />
-                                        <label className="form-check-label small">
-                                          {a.applicant_name}
-                                          {a.comn_enrol_no && (
-                                            <span className="text-muted"> ({a.comn_enrol_no})</span>
-                                          )}
-                                          {ownBatchTimingRange && (
-                                            <span
-                                              className={`badge ${timingBadge.cls} ms-1`}
-                                              style={{ fontSize: "0.65rem" }}
-                                            >
-                                              {timingBadge.text}
-                                            </span>
-                                          )}
-                                        </label>
-                                      </div>
+                                  studentsByTab[status].push(a);
+                                });
+                                const activeStudents = studentsByTab[ownStudentTimingTab];
+                                return (
+                                  <>
+                                    <div className="d-flex gap-2 mb-2 flex-wrap">
+                                      {TIMING_STATUS_TABS.map((tab) => (
+                                        <button
+                                          key={tab.key}
+                                          type="button"
+                                          className={`btn btn-sm ${
+                                            ownStudentTimingTab === tab.key
+                                              ? tab.activeCls
+                                              : tab.outlineCls
+                                          }`}
+                                          onClick={() => setOwnStudentTimingTab(tab.key)}
+                                        >
+                                          {tab.label} ({studentsByTab[tab.key].length})
+                                        </button>
+                                      ))}
                                     </div>
-                                  );
-                                })}
-                              </div>
+                                    <div
+                                      className="border rounded p-2 row g-2"
+                                      style={{ maxHeight: "220px", overflowY: "auto" }}
+                                    >
+                                      {activeStudents.length === 0 ? (
+                                        <div className="text-muted small">
+                                          No students in this category.
+                                        </div>
+                                      ) : (
+                                        activeStudents.map((a) => (
+                                          <div className="col-md-4" key={a.id}>
+                                            <div className="form-check">
+                                              <input
+                                                className="form-check-input"
+                                                type="checkbox"
+                                                checked={ownBatchSelectedStudentIds.includes(
+                                                  a.id
+                                                )}
+                                                onChange={() => toggleOwnBatchStudent(a.id)}
+                                              />
+                                              <label className="form-check-label small">
+                                                {a.applicant_name}
+                                                {a.comn_enrol_no && (
+                                                  <span className="text-muted">
+                                                    {" "}
+                                                    ({a.comn_enrol_no})
+                                                  </span>
+                                                )}
+                                              </label>
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()
                             )}
                           </div>
 

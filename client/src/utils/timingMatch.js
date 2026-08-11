@@ -59,3 +59,13 @@ export function matchTimingStatus(studentTimingRaw, batchStart, batchEnd) {
   const overlaps = studentRange.start <= batchEnd && batchStart <= studentRange.end;
   return overlaps ? "match" : "different";
 }
+
+// Shared tab config for the 3-way student filter used when picking a
+// batch's students (Batch Management + the teacher's own Create Batch
+// form) — one source of truth for labels/colors/default tab so both
+// stay in sync.
+export const TIMING_STATUS_TABS = [
+  { key: "match", label: "Time Matches", activeCls: "btn-success", outlineCls: "btn-outline-success" },
+  { key: "different", label: "Different Timing", activeCls: "btn-warning", outlineCls: "btn-outline-warning" },
+  { key: "unknown", label: "No timing info", activeCls: "btn-secondary", outlineCls: "btn-outline-secondary" },
+];
