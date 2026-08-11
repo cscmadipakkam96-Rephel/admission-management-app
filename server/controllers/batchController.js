@@ -8,13 +8,12 @@ const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
 const FeePayment = require("../models/FeePayment");
-const { parseTimeRange, rangesOverlap } = require("../utils/timeRange");
 const {
   VALID_SECTIONS,
   SECTION_LABELS,
-  sectionsOverlapOnDays,
   isSectionActiveToday,
 } = require("../utils/sections");
+const { findConflicts } = require("../utils/batchConflicts");
 
 const includeOptionsFor = (todayStr) => [
   {
@@ -105,39 +104,6 @@ const getSubjectStudents = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-};
-
-const findConflicts = async ({ adminId, section, timing, subjectId, teacherId, excludeId }) => {
-  const newRange = parseTimeRange(timing);
-  const where = { admin_id: adminId, active: true };
-  if (excludeId) where.id = { [Op.ne]: excludeId };
-
-  const existingBatches = await Batch.findAll({ where });
-
-  const sameSlotSameSubject = existingBatches.find(
-    (b) =>
-      b.section === section &&
-      b.subject_id === Number(subjectId) &&
-      b.timing === timing
-  );
-  if (sameSlotSameSubject) {
-    return `This subject already has a batch in this section at this exact timing.`;
-  }
-
-  if (newRange) {
-    const teacherClash = existingBatches.find((b) => {
-      if (b.teacher_id !== Number(teacherId)) return false;
-      if (!sectionsOverlapOnDays(b.section, section)) return false;
-      const existingRange = parseTimeRange(b.timing);
-      if (!existingRange) return false;
-      return rangesOverlap(newRange, existingRange);
-    });
-    if (teacherClash) {
-      return `This teacher already has "${teacherClash.batch_name}" (${teacherClash.timing}) scheduled on an overlapping day. Choose a different time or teacher.`;
-    }
-  }
-
-  return null;
 };
 
 const createBatch = async (req, res) => {
@@ -859,6 +825,8 @@ const getStudentTracking = async (req, res) => {
 };
 
 module.exports = {
+  coursesForSubject,
+  includeOptionsFor,
   getSubjectTeachers,
   getSubjectStudents,
   createBatch,

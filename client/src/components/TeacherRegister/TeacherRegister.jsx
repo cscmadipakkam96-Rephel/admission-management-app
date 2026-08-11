@@ -23,6 +23,23 @@ const SECTION_DAYS = {
   weekend: ["Saturday"],
 };
 
+const OWN_BATCH_SECTIONS = [
+  { key: "fast_track", label: "Fast Track (Mon-Sat)" },
+  { key: "normal_mwf", label: "Normal Track (Mon/Wed/Fri)" },
+  { key: "normal_tts", label: "Normal Track (Tue/Thu/Sat)" },
+  { key: "weekend", label: "Weekend (Saturday)" },
+];
+
+const blankOwnBatchForm = () => ({
+  id: null,
+  batch_name: "",
+  section: "",
+  subject_id: "",
+  start_time: "",
+  end_time: "",
+  num_days: "",
+});
+
 const parseTimePart = (str) => {
   const match = str.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
   if (!match) return null;
@@ -171,6 +188,16 @@ function TeacherRegister() {
   const [cardErrors, setCardErrors] = useState({});
   const [oldTopicOptions, setOldTopicOptions] = useState([]);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
+
+  // Teacher self-service batch creation — only relevant when
+  // dashboard.teacher.can_create_batches is true (admin-granted).
+  const [ownBatchSubjects, setOwnBatchSubjects] = useState([]);
+  const [ownBatchForm, setOwnBatchForm] = useState(null);
+  const [ownBatchStudentOptions, setOwnBatchStudentOptions] = useState([]);
+  const [ownBatchSelectedStudentIds, setOwnBatchSelectedStudentIds] = useState([]);
+  const [ownBatchErrors, setOwnBatchErrors] = useState({});
+  const [ownBatchSubmitting, setOwnBatchSubmitting] = useState(false);
+  const [deletingOwnBatchId, setDeletingOwnBatchId] = useState(null);
 
   const toggleSubject = (id) => {
     setExpandedSubjectIds((prev) => {
@@ -654,6 +681,151 @@ function TeacherRegister() {
       setBatchProgress(response.data.data);
     } catch {
       // Keep whatever's already on screen if the refresh itself fails.
+    }
+  };
+
+  const refreshDashboard = async () => {
+    try {
+      const response = await API.get(`/teacher-auth/dashboard/${slug}`);
+      setDashboard(response.data.data);
+    } catch {
+      // Keep whatever's already on screen if the refresh itself fails.
+    }
+  };
+
+  // ---- Own batch create/edit/manage — only reachable when
+  // dashboard.teacher.can_create_batches is true ----
+
+  const fetchOwnBatchSubjects = async () => {
+    try {
+      const response = await API.get("/teacher-auth/subjects");
+      setOwnBatchSubjects(response.data.data || []);
+    } catch {
+      setOwnBatchSubjects([]);
+    }
+  };
+
+  const fetchOwnBatchStudentOptions = async (subjectId) => {
+    if (!subjectId) {
+      setOwnBatchStudentOptions([]);
+      return;
+    }
+    try {
+      const response = await API.get("/teacher-auth/batches/subject-students", {
+        params: { subjectId },
+      });
+      setOwnBatchStudentOptions(response.data.data || []);
+    } catch {
+      setOwnBatchStudentOptions([]);
+    }
+  };
+
+  const openCreateOwnBatchForm = () => {
+    setOwnBatchForm(blankOwnBatchForm());
+    setOwnBatchSelectedStudentIds([]);
+    setOwnBatchStudentOptions([]);
+    setOwnBatchErrors({});
+    if (ownBatchSubjects.length === 0) fetchOwnBatchSubjects();
+  };
+
+  const openEditOwnBatchForm = (bp) => {
+    // bp comes from batchProgress — it has subject_name (not subject_id)
+    // and a combined "start - end" timing string, so both need reversing
+    // back into the form's separate fields.
+    const [start, end] = (bp.timing || "").split(" - ").map((s) => s.trim());
+    const subject = ownBatchSubjects.find((s) => s.subject_name === bp.subject_name);
+    setOwnBatchForm({
+      id: bp.id,
+      batch_name: bp.batch_name,
+      section: bp.section,
+      subject_id: subject ? subject.id : "",
+      start_time: start ? start.toLowerCase() : "",
+      end_time: end ? end.toLowerCase() : "",
+      num_days: bp.num_days ?? "",
+    });
+    setOwnBatchSelectedStudentIds((bp.students || []).map((s) => s.id));
+    setOwnBatchErrors({});
+    if (ownBatchSubjects.length === 0) fetchOwnBatchSubjects();
+    if (subject) fetchOwnBatchStudentOptions(subject.id);
+  };
+
+  const closeOwnBatchForm = () => {
+    setOwnBatchForm(null);
+    setOwnBatchErrors({});
+  };
+
+  const handleOwnBatchSubjectChange = (subjectId) => {
+    setOwnBatchForm((prev) => ({ ...prev, subject_id: subjectId }));
+    setOwnBatchSelectedStudentIds([]);
+    fetchOwnBatchStudentOptions(subjectId);
+  };
+
+  const toggleOwnBatchStudent = (admissionId) => {
+    setOwnBatchSelectedStudentIds((prev) =>
+      prev.includes(admissionId)
+        ? prev.filter((id) => id !== admissionId)
+        : [...prev, admissionId]
+    );
+  };
+
+  const submitOwnBatch = async () => {
+    if (!ownBatchForm) return;
+    const { id, batch_name, section, subject_id, start_time, end_time, num_days } = ownBatchForm;
+    const errors = {};
+    if (!batch_name.trim()) errors.batch_name = "Batch Name is required.";
+    if (!section) errors.section = "Section is required.";
+    if (!subject_id) errors.subject_id = "Subject is required.";
+    if (!TIME_12H_PATTERN.test(start_time) || !TIME_12H_PATTERN.test(end_time)) {
+      errors.timing = 'Start/End time must look like "8:00 am" or "12:00 pm".';
+    }
+    if (Object.keys(errors).length > 0) {
+      setOwnBatchErrors(errors);
+      return;
+    }
+    setOwnBatchSubmitting(true);
+    setOwnBatchErrors({});
+    try {
+      const payload = {
+        batch_name: batch_name.trim(),
+        section,
+        subject_id,
+        timing: `${start_time} - ${end_time}`,
+        num_days: num_days === "" ? null : num_days,
+        admission_ids: ownBatchSelectedStudentIds,
+      };
+      if (id) {
+        await API.put(`/teacher-auth/batches/${id}`, payload);
+      } else {
+        await API.post("/teacher-auth/batches", payload);
+      }
+      closeOwnBatchForm();
+      await Promise.all([refreshBatchProgress(), refreshDashboard()]);
+      setToast({ variant: "success", message: id ? "Batch updated." : "Batch created." });
+    } catch (err) {
+      if (err.response?.data?.errors) {
+        setOwnBatchErrors(err.response.data.errors);
+      } else {
+        setOwnBatchErrors({ general: err.response?.data?.message || "Failed to save batch." });
+      }
+    } finally {
+      setOwnBatchSubmitting(false);
+    }
+  };
+
+  const handleDeleteOwnBatch = async (batchId) => {
+    if (!window.confirm("Delete this batch? This can't be undone.")) return;
+    setDeletingOwnBatchId(batchId);
+    try {
+      await API.delete(`/teacher-auth/batches/${batchId}`);
+      await Promise.all([refreshBatchProgress(), refreshDashboard()]);
+      setToast({ variant: "success", message: "Batch removed." });
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.response?.data?.message || "Failed to delete batch.",
+      });
+    } finally {
+      setDeletingOwnBatchId(null);
     }
   };
 
@@ -1430,6 +1602,11 @@ function TeacherRegister() {
                             <span className="badge bg-info text-dark ms-2">
                               {b.section_label}
                             </span>
+                            <span
+                              className={`badge ms-2 ${b.created_by_teacher_id ? "bg-primary-subtle text-primary" : "bg-secondary-subtle text-secondary"}`}
+                            >
+                              {b.created_by_teacher_id ? "Own Creation" : "Created by Admin"}
+                            </span>
                             {b.is_substitute && (
                               <span className="badge bg-warning text-dark ms-2">
                                 Substitute Class
@@ -1718,6 +1895,14 @@ function TeacherRegister() {
                                   <div key={b.id} className="small mt-1">
                                     <div className="fw-semibold">
                                       {b.batch_name}
+                                      {b.created_by_teacher_id && (
+                                        <span
+                                          className="badge bg-primary-subtle text-primary ms-1"
+                                          style={{ fontSize: "0.65rem" }}
+                                        >
+                                          Own
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="text-muted">
                                       {b.timing || "No timing"}
@@ -1758,6 +1943,11 @@ function TeacherRegister() {
                               </span>
                               <span className="badge bg-info text-dark ms-2">
                                 {bp.section_label}
+                              </span>
+                              <span
+                                className={`badge ms-2 ${bp.created_by_teacher_id ? "bg-primary-subtle text-primary" : "bg-secondary-subtle text-secondary"}`}
+                              >
+                                {bp.created_by_teacher_id ? "Own Creation" : "Created by Admin"}
                               </span>
                               {bp.subjectCompleted && (
                                 <span className="badge bg-success ms-2">
@@ -1983,6 +2173,249 @@ function TeacherRegister() {
                   )}
                 </div>
               </div>
+
+              {dashboard.teacher?.can_create_batches && (
+                <div className="card shadow-sm mb-4">
+                  <div className="card-body">
+                    <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                      <h5 className="mb-0">My Batches — Create &amp; Manage</h5>
+                      {!ownBatchForm && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={openCreateOwnBatchForm}
+                        >
+                          <i className="bi bi-plus-lg me-1"></i>
+                          Create Batch
+                        </button>
+                      )}
+                    </div>
+
+                    {ownBatchForm && (
+                      <div className="border rounded p-3 mb-3 bg-light">
+                        <div className="row g-2">
+                          <div className="col-md-6">
+                            <label className="form-label small mb-1">Batch Name</label>
+                            <input
+                              type="text"
+                              className={`form-control form-control-sm ${ownBatchErrors.batch_name ? "is-invalid" : ""}`}
+                              value={ownBatchForm.batch_name}
+                              onChange={(e) =>
+                                setOwnBatchForm((p) => ({ ...p, batch_name: e.target.value }))
+                              }
+                            />
+                            {ownBatchErrors.batch_name && (
+                              <div className="invalid-feedback">{ownBatchErrors.batch_name}</div>
+                            )}
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small mb-1">Section</label>
+                            <select
+                              className={`form-select form-select-sm ${ownBatchErrors.section ? "is-invalid" : ""}`}
+                              value={ownBatchForm.section}
+                              onChange={(e) =>
+                                setOwnBatchForm((p) => ({ ...p, section: e.target.value }))
+                              }
+                            >
+                              <option value="">— select —</option>
+                              {OWN_BATCH_SECTIONS.map((s) => (
+                                <option key={s.key} value={s.key}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </select>
+                            {ownBatchErrors.section && (
+                              <div className="invalid-feedback">{ownBatchErrors.section}</div>
+                            )}
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small mb-1">Subject</label>
+                            <select
+                              className={`form-select form-select-sm ${ownBatchErrors.subject_id ? "is-invalid" : ""}`}
+                              value={ownBatchForm.subject_id}
+                              onChange={(e) => handleOwnBatchSubjectChange(e.target.value)}
+                            >
+                              <option value="">— select —</option>
+                              {ownBatchSubjects.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.subject_name}
+                                </option>
+                              ))}
+                            </select>
+                            {ownBatchErrors.subject_id && (
+                              <div className="invalid-feedback">{ownBatchErrors.subject_id}</div>
+                            )}
+                          </div>
+                          <div className="col-md-2">
+                            <label className="form-label small mb-1">Planned Days</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className="form-control form-control-sm"
+                              value={ownBatchForm.num_days}
+                              onChange={(e) =>
+                                setOwnBatchForm((p) => ({ ...p, num_days: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="col-md-2">
+                            <label className="form-label small mb-1">Start Time</label>
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="8:00 am"
+                              maxLength={8}
+                              value={ownBatchForm.start_time}
+                              onChange={(e) =>
+                                setOwnBatchForm((p) => ({
+                                  ...p,
+                                  start_time: sanitizeTime12Input(e.target.value),
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="col-md-2">
+                            <label className="form-label small mb-1">End Time</label>
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="12:00 pm"
+                              maxLength={8}
+                              value={ownBatchForm.end_time}
+                              onChange={(e) =>
+                                setOwnBatchForm((p) => ({
+                                  ...p,
+                                  end_time: sanitizeTime12Input(e.target.value),
+                                }))
+                              }
+                            />
+                          </div>
+                          {ownBatchErrors.timing && (
+                            <div className="col-12">
+                              <div className="text-danger small">{ownBatchErrors.timing}</div>
+                            </div>
+                          )}
+
+                          <div className="col-12">
+                            <label className="form-label small mb-1 d-block">Students</label>
+                            {!ownBatchForm.subject_id ? (
+                              <div className="text-muted small">
+                                Select a Subject — admitted students for it will be listed
+                                here.
+                              </div>
+                            ) : ownBatchStudentOptions.length === 0 ? (
+                              <div className="text-muted small">
+                                No admitted students found for this subject.
+                              </div>
+                            ) : (
+                              <div
+                                className="border rounded p-2 row g-2"
+                                style={{ maxHeight: "220px", overflowY: "auto" }}
+                              >
+                                {ownBatchStudentOptions.map((a) => (
+                                  <div className="col-md-4" key={a.id}>
+                                    <div className="form-check">
+                                      <input
+                                        className="form-check-input"
+                                        type="checkbox"
+                                        checked={ownBatchSelectedStudentIds.includes(a.id)}
+                                        onChange={() => toggleOwnBatchStudent(a.id)}
+                                      />
+                                      <label className="form-check-label small">
+                                        {a.applicant_name}
+                                        {a.comn_enrol_no && (
+                                          <span className="text-muted"> ({a.comn_enrol_no})</span>
+                                        )}
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {ownBatchErrors.general && (
+                            <div className="col-12">
+                              <div className="text-danger small">{ownBatchErrors.general}</div>
+                            </div>
+                          )}
+
+                          <div className="col-12 d-flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              disabled={ownBatchSubmitting}
+                              onClick={submitOwnBatch}
+                            >
+                              {ownBatchSubmitting
+                                ? "Saving..."
+                                : ownBatchForm.id
+                                  ? "Save Changes"
+                                  : "Create Batch"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              onClick={closeOwnBatchForm}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(() => {
+                      const myOwnBatches = batchProgress.filter(
+                        (bp) => bp.created_by_teacher_id === dashboard.teacher?.id
+                      );
+                      return myOwnBatches.length === 0 ? (
+                        <div className="text-muted small">
+                          You haven't created any batches yet.
+                        </div>
+                      ) : (
+                        myOwnBatches.map((bp) => (
+                          <div
+                            key={bp.id}
+                            className="border rounded p-2 mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2"
+                          >
+                            <div>
+                              <strong>{bp.batch_name}</strong>
+                              <span className="text-muted small ms-2">{bp.subject_name}</span>
+                              <span className="badge bg-info text-dark ms-2">
+                                {bp.section_label}
+                              </span>
+                              <div className="text-muted small">
+                                <i className="bi bi-clock me-1"></i>
+                                {bp.timing || "No timing set"}
+                              </div>
+                            </div>
+                            <div className="d-flex gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                title="Edit this batch"
+                                onClick={() => openEditOwnBatchForm(bp)}
+                              >
+                                <i className="bi bi-pencil"></i>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                title="Delete this batch"
+                                disabled={deletingOwnBatchId === bp.id}
+                                onClick={() => handleDeleteOwnBatch(bp.id)}
+                              >
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
 
               <div className="card shadow-sm mb-4">
                 <div className="card-body">

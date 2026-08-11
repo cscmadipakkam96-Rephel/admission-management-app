@@ -19,6 +19,11 @@ const {
   login,
   teacherLogout,
   getTeacherMe,
+  getTeacherSubjects,
+  getTeacherSubjectStudents,
+  createOwnBatch,
+  updateOwnBatch,
+  deleteOwnBatch,
 } = require("../controllers/teacherAuthController");
 const requireTeacherAuth = require("../middleware/teacherAuth");
 
@@ -44,6 +49,14 @@ router.post("/mark-subject-complete", requireTeacherAuth, markSubjectComplete);
 router.post("/unmark-subject-complete", requireTeacherAuth, unmarkSubjectComplete);
 router.get("/batch-topics/:batchId", requireTeacherAuth, getBatchTopicSuggestions);
 router.post("/restart-batch", requireTeacherAuth, restartBatch);
+
+// Teacher self-service batch creation — gated per-teacher by
+// Teacher.can_create_batches (checked inside createOwnBatch).
+router.get("/subjects", requireTeacherAuth, getTeacherSubjects);
+router.get("/batches/subject-students", requireTeacherAuth, getTeacherSubjectStudents);
+router.post("/batches", requireTeacherAuth, createOwnBatch);
+router.put("/batches/:id", requireTeacherAuth, updateOwnBatch);
+router.delete("/batches/:id", requireTeacherAuth, deleteOwnBatch);
 
 // General Teacher Login (email + password, cookie session)
 router.post("/login", login);

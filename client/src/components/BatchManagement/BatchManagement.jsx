@@ -1041,6 +1041,11 @@ function GroupManagement() {
                             </div>
                             <span className="badge bg-warning text-dark">
                               {(b.Students || []).length} students
+                            </span>{" "}
+                            <span
+                              className={`badge ${b.created_by_teacher_id ? "bg-info text-dark" : "bg-dark"}`}
+                            >
+                              {b.created_by_teacher_id ? "Created by Teacher" : "Created by Admin"}
                             </span>
 
                             {b.Substitutions?.[0] ? (

@@ -74,6 +74,13 @@ const Teacher = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    // Off by default for every teacher — admin must explicitly grant this
+    // per teacher before the "create my own batch" UI/endpoints unlock.
+    can_create_batches: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
   },
   {
     tableName: "teachers",

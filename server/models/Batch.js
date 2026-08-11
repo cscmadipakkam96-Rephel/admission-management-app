@@ -36,6 +36,15 @@ const Batch = sequelize.define(
       allowNull: false,
       references: { model: Teacher, key: "id" },
     },
+    // null = created by an admin (the default for every batch until this
+    // feature shipped). Set to a Teacher.id when that teacher created the
+    // batch themselves via the teacher portal — drives both the "created
+    // by" tag and the teacher-side edit/delete ownership check.
+    created_by_teacher_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: Teacher, key: "id" },
+    },
     timing: {
       type: DataTypes.STRING(50),
       allowNull: false,

@@ -13,7 +13,9 @@ const Batch = require("../models/Batch");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const { markAttendanceForAdmission } = require("./attendanceController");
-const { isSectionActiveToday, SECTION_LABELS } = require("../utils/sections");
+const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
+const { findConflicts } = require("../utils/batchConflicts");
+const { coursesForSubject, includeOptionsFor } = require("./batchController");
 
 // Which of a batch's students already got credit for `topic` before today
 // (marked Present by the teacher on some earlier date this exact topic was
@@ -361,9 +363,11 @@ const getDashboard = async (req, res) => {
       success: true,
       data: {
         teacher: {
+          id: teacher.id,
           teacher_name: teacher.teacher_name,
           qualification: teacher.qualification,
           courses: (teacher.Courses || []).map((c) => c.course_name),
+          can_create_batches: teacher.can_create_batches,
         },
         courseSyllabus,
         holiday: todayHoliday
@@ -388,6 +392,7 @@ const getDashboard = async (req, res) => {
             subject_name: b.Subject?.subject_name || null,
             timing: b.timing,
             num_days: b.num_days,
+            created_by_teacher_id: b.created_by_teacher_id,
             is_substitute: isSubstitute,
             covered_by: coveredBy,
             started_at: session?.started_at || null,
@@ -413,6 +418,7 @@ const getDashboard = async (req, res) => {
           section_label: SECTION_LABELS[b.section] || b.section,
           subject_name: b.Subject?.subject_name || null,
           timing: b.timing,
+          created_by_teacher_id: b.created_by_teacher_id,
         })),
       },
     });
@@ -839,6 +845,7 @@ const getBatchProgress = async (req, res) => {
         isOverdue: b.num_days != null && daysRemaining !== null && daysRemaining < 0,
         subjectCompleted: b.subject_completed,
         subjectCompletedAt: b.subject_completed_at,
+        created_by_teacher_id: b.created_by_teacher_id,
       };
     });
 
@@ -1076,6 +1083,233 @@ const unmarkSubjectComplete = async (req, res) => {
   }
 };
 
+// ---- Teacher self-service batch creation ----
+// Off for every teacher until an admin flips Teacher.can_create_batches on
+// for them (Teacher Management). A teacher can only create batches for
+// themselves (teacher_id is never client-supplied) and can only edit/
+// delete batches where created_by_teacher_id is their own id — an
+// admin-created batch assigned to them (created_by_teacher_id: null)
+// is read-only from this side, same as any other teacher's batch.
+
+const getTeacherSubjects = async (req, res) => {
+  try {
+    const subjects = await Subject.findAll({
+      where: { admin_id: req.teacher.admin_id, active: true },
+      order: [["subject_name", "ASC"]],
+    });
+    res.status(200).json({ success: true, data: subjects });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getTeacherSubjectStudents = async (req, res) => {
+  try {
+    const { subjectId } = req.query;
+    const adminId = req.teacher.admin_id;
+    if (!subjectId) {
+      return res.status(400).json({ success: false, message: "subjectId is required." });
+    }
+    const courses = await coursesForSubject(subjectId, adminId);
+    const courseNames = new Set(
+      courses.map((c) => (c.course_name || "").trim().toLowerCase())
+    );
+    if (courseNames.size === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+    const admissions = await Admission.findAll({
+      where: { admin_id: adminId, active: true },
+    });
+    const matched = admissions.filter((a) =>
+      courseNames.has((a.course_name || "").trim().toLowerCase())
+    );
+    res.status(200).json({ success: true, data: matched });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const createOwnBatch = async (req, res) => {
+  try {
+    const teacher = await Teacher.findOne({
+      where: { id: req.teacher.teacherId, active: true },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+    if (!teacher.can_create_batches) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to create batches. Ask your admin to enable it.",
+      });
+    }
+
+    const { batch_name, section, subject_id, timing, num_days, admission_ids } = req.body;
+    const errors = {};
+    if (!batch_name || !batch_name.trim()) errors.batch_name = "Batch Name is required.";
+    if (!VALID_SECTIONS.includes(section)) errors.section = "Invalid section.";
+    if (!subject_id) errors.subject_id = "Subject is required.";
+    if (!timing || !timing.trim()) errors.timing = "Timing is required.";
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ success: false, errors });
+    }
+
+    const subject = await Subject.findOne({
+      where: { id: subject_id, admin_id: teacher.admin_id },
+    });
+    if (!subject) {
+      return res.status(404).json({ success: false, errors: { subject_id: "Subject not found" } });
+    }
+
+    const conflictMessage = await findConflicts({
+      adminId: teacher.admin_id,
+      section,
+      timing,
+      subjectId: subject_id,
+      teacherId: teacher.id,
+    });
+    if (conflictMessage) {
+      return res.status(409).json({ success: false, message: conflictMessage });
+    }
+
+    const batch = await Batch.create({
+      admin_id: teacher.admin_id,
+      batch_name: batch_name.trim(),
+      section,
+      subject_id,
+      teacher_id: teacher.id,
+      created_by_teacher_id: teacher.id,
+      timing: timing.trim(),
+      num_days: num_days === "" || num_days === undefined ? null : num_days,
+    });
+
+    if (admission_ids && admission_ids.length > 0) {
+      const ownedCount = await Admission.count({
+        where: { id: admission_ids, admin_id: teacher.admin_id },
+      });
+      if (ownedCount !== admission_ids.length) {
+        return res.status(404).json({ success: false, message: "One or more students not found" });
+      }
+      await batch.setStudents(admission_ids);
+    }
+
+    const created = await Batch.findByPk(batch.id, {
+      include: includeOptionsFor(new Date().toISOString().slice(0, 10)),
+    });
+    res.status(201).json({
+      success: true,
+      message: "Batch created successfully",
+      data: created,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateOwnBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = await Batch.findOne({
+      where: {
+        id,
+        admin_id: req.teacher.admin_id,
+        teacher_id: req.teacher.teacherId,
+        created_by_teacher_id: req.teacher.teacherId,
+      },
+    });
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Batch not found, or you don't have permission to edit it — you can only edit batches you created yourself.",
+      });
+    }
+
+    const { batch_name, section, subject_id, timing, num_days, admission_ids } = req.body;
+    const errors = {};
+    if (!batch_name || !batch_name.trim()) errors.batch_name = "Batch Name is required.";
+    if (!VALID_SECTIONS.includes(section)) errors.section = "Invalid section.";
+    if (!subject_id) errors.subject_id = "Subject is required.";
+    if (!timing || !timing.trim()) errors.timing = "Timing is required.";
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ success: false, errors });
+    }
+
+    const subject = await Subject.findOne({
+      where: { id: subject_id, admin_id: req.teacher.admin_id },
+    });
+    if (!subject) {
+      return res.status(404).json({ success: false, errors: { subject_id: "Subject not found" } });
+    }
+
+    const conflictMessage = await findConflicts({
+      adminId: req.teacher.admin_id,
+      section,
+      timing,
+      subjectId: subject_id,
+      teacherId: req.teacher.teacherId,
+      excludeId: id,
+    });
+    if (conflictMessage) {
+      return res.status(409).json({ success: false, message: conflictMessage });
+    }
+
+    await batch.update({
+      batch_name: batch_name.trim(),
+      section,
+      subject_id,
+      timing: timing.trim(),
+      num_days: num_days === "" || num_days === undefined ? null : num_days,
+    });
+
+    if (admission_ids) {
+      const ownedCount = await Admission.count({
+        where: { id: admission_ids, admin_id: req.teacher.admin_id },
+      });
+      if (ownedCount !== admission_ids.length) {
+        return res.status(404).json({ success: false, message: "One or more students not found" });
+      }
+      await batch.setStudents(admission_ids);
+    }
+
+    const updated = await Batch.findByPk(batch.id, {
+      include: includeOptionsFor(new Date().toISOString().slice(0, 10)),
+    });
+    res.status(200).json({
+      success: true,
+      message: "Batch updated successfully",
+      data: updated,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteOwnBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = await Batch.findOne({
+      where: {
+        id,
+        admin_id: req.teacher.admin_id,
+        teacher_id: req.teacher.teacherId,
+        created_by_teacher_id: req.teacher.teacherId,
+      },
+    });
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Batch not found, or you don't have permission to delete it — you can only delete batches you created yourself.",
+      });
+    }
+    await batch.update({ active: false });
+    res.status(200).json({ success: true, message: "Batch removed successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   lookupBySlug,
   getDashboard,
@@ -1095,4 +1329,9 @@ module.exports = {
   login,
   teacherLogout,
   getTeacherMe,
+  getTeacherSubjects,
+  getTeacherSubjectStudents,
+  createOwnBatch,
+  updateOwnBatch,
+  deleteOwnBatch,
 };

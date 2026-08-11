@@ -15,6 +15,7 @@ const initialForm = {
   joining_date: "",
   salary: "",
   status: "Active",
+  can_create_batches: false,
 };
 
 const STATUSES = ["Active", "Inactive"];
@@ -233,6 +234,7 @@ function TeacherManagement() {
       joining_date: teacher.joining_date || "",
       salary: teacher.salary || "",
       status: teacher.status || "Active",
+      can_create_batches: teacher.can_create_batches || false,
     });
     setFormErrors({});
     setSelectedCourseIds((teacher.Courses || []).map((c) => c.id));
@@ -566,6 +568,7 @@ function TeacherManagement() {
                     Salary <i className={`bi ${sortIcon("salary")}`}></i>
                   </th>
                   <th>Status</th>
+                  <th>Batch Creation</th>
                   <th>Assigned Students</th>
                   <th>Actions</th>
                 </tr>
@@ -573,7 +576,7 @@ function TeacherManagement() {
               <tbody>
                 {sortedTeachers.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted py-4" colSpan={11}>
+                    <td className="text-center text-muted py-4" colSpan={12}>
                       <i className="bi bi-inbox fs-3 d-block mb-2"></i>
                       No teachers found.
                     </td>
@@ -605,6 +608,13 @@ function TeacherManagement() {
                           className={`badge ${STATUS_BADGE[t.status] || "bg-secondary"}`}
                         >
                           {t.status}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${t.can_create_batches ? "bg-success" : "bg-secondary"}`}
+                        >
+                          {t.can_create_batches ? "Enabled" : "Disabled"}
                         </span>
                       </td>
                       <td>
@@ -837,6 +847,28 @@ function TeacherManagement() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="col-md-4 d-flex align-items-end">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="canCreateBatches"
+                        checked={formData.can_create_batches}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            can_create_batches: e.target.checked,
+                          }))
+                        }
+                      />
+                      <label
+                        className="form-check-label"
+                        htmlFor="canCreateBatches"
+                      >
+                        Allow this teacher to create their own batches
+                      </label>
+                    </div>
                   </div>
 
                   <div className="col-12">
