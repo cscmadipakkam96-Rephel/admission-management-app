@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
+import StudentRiskManagement from "./StudentRiskManagement";
 
 const EXPORT_COLUMNS = [
   { key: "applicant_name", label: "Student Name" },
@@ -31,6 +32,14 @@ const FEE_BADGE_CLASS = {
   "Fee Not Set": "text-bg-secondary",
 };
 
+// Only the two "flagged" risk tiers need a banner here — an On Track
+// student shows no banner at all. See server/utils/studentRisk.js for how
+// riskStatus/riskReasons are computed.
+const RISK_BADGE = {
+  at_risk: { label: "At Risk", emoji: "🔴", alertClass: "alert-danger" },
+  needs_attention: { label: "Needs Attention", emoji: "🟠", alertClass: "alert-warning" },
+};
+
 const formatMonthLabel = (yearMonth) => {
   const [y, m] = yearMonth.split("-");
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", {
@@ -51,6 +60,21 @@ function StudentTracking() {
   const [feeStatusFilter, setFeeStatusFilter] = useState("");
   const [expandedStudentId, setExpandedStudentId] = useState(null);
   const [expandedSubjectKey, setExpandedSubjectKey] = useState(null);
+  const [activeTab, setActiveTab] = useState("tracking");
+  const [pendingScrollId, setPendingScrollId] = useState(null);
+
+  const handleOpenFromRisk = (id) => {
+    setActiveTab("tracking");
+    setExpandedStudentId(id);
+    setPendingScrollId(id);
+  };
+
+  useEffect(() => {
+    if (!pendingScrollId || activeTab !== "tracking") return;
+    const el = document.getElementById(`tracking-card-${pendingScrollId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPendingScrollId(null);
+  }, [pendingScrollId, activeTab]);
 
   useEffect(() => {
     const fetchTracking = async () => {
@@ -245,9 +269,6 @@ function StudentTracking() {
     doc.save("student_tracking.pdf");
   };
 
-  if (loading) return <p className="text-center text-muted p-4">Loading...</p>;
-  if (error) return <p className="text-center text-danger p-4">{error}</p>;
-
   return (
     <div className="card shadow-sm mt-4">
       <div className="card-body">
@@ -275,6 +296,36 @@ function StudentTracking() {
           </div>
         </div>
 
+        <div className="btn-group btn-group-sm mb-3" role="group">
+          <button
+            type="button"
+            className={`btn ${activeTab === "tracking" ? "btn-primary" : "btn-outline-primary"}`}
+            onClick={() => setActiveTab("tracking")}
+          >
+            Student 360°
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === "risk" ? "btn-primary" : "btn-outline-primary"}`}
+            onClick={() => setActiveTab("risk")}
+          >
+            Student Risk Management
+          </button>
+        </div>
+
+        {activeTab === "risk" ? (
+          <StudentRiskManagement
+            students={students}
+            loading={loading}
+            error={error}
+            onOpenStudent={handleOpenFromRisk}
+          />
+        ) : loading ? (
+          <p className="text-center text-muted p-4">Loading...</p>
+        ) : error ? (
+          <p className="text-center text-danger p-4">{error}</p>
+        ) : (
+          <>
         <div className="row g-2 mb-3 align-items-end">
           <div className="col-md-2">
             <label className="form-label small mb-1">Search</label>
@@ -424,7 +475,11 @@ function StudentTracking() {
             );
 
             return (
-              <div key={student.id} className="border rounded-3 p-3 mb-3 shadow-sm">
+              <div
+                key={student.id}
+                id={`tracking-card-${student.id}`}
+                className="border rounded-3 p-3 mb-3 shadow-sm"
+              >
                 <div
                   role="button"
                   className="d-flex justify-content-between align-items-center flex-wrap gap-2"
@@ -473,6 +528,20 @@ function StudentTracking() {
 
                 {isStudentOpen && (
                   <div className="mt-3">
+                    {student.riskStatus && RISK_BADGE[student.riskStatus] && (
+                      <div className={`alert ${RISK_BADGE[student.riskStatus].alertClass} py-2 px-3 mb-3`}>
+                        <div className="fw-semibold mb-1">
+                          {RISK_BADGE[student.riskStatus].emoji} {RISK_BADGE[student.riskStatus].label} — Why this student is flagged
+                        </div>
+                        <div className="d-flex flex-wrap gap-1">
+                          {(student.riskReasons || []).map((reason, idx) => (
+                            <span key={idx} className="badge bg-white text-dark border">
+                              {reason}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {/* Student Header */}
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                       <div className="text-muted small">
@@ -893,6 +962,8 @@ function StudentTracking() {
               </div>
             );
           })
+        )}
+          </>
         )}
       </div>
     </div>

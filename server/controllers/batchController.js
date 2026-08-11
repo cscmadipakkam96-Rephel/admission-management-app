@@ -14,6 +14,7 @@ const {
   isSectionActiveToday,
 } = require("../utils/sections");
 const { findConflicts } = require("../utils/batchConflicts");
+const { classifyStudentRisk } = require("../utils/studentRisk");
 
 const includeOptionsFor = (todayStr) => [
   {
@@ -791,15 +792,41 @@ const getStudentTracking = async (req, res) => {
               ? "Paid"
               : "Partially Paid";
 
+      const overallAttendancePercent = totalClasses
+        ? Math.round((present / totalClasses) * 100)
+        : 0;
+
+      // Student Risk Management — a different (stricter, all-or-nothing
+      // per subject) metric than attendance %, so it's shown alongside
+      // risk data for context but deliberately excluded from the risk
+      // classification itself (see server/utils/studentRisk.js for why).
+      const subjectCount = student.subjects.length;
+      const completedSubjectCount = student.subjects.filter(
+        (s) => s.studentCoveredAllSoFar
+      ).length;
+      const academicProgressPercent = subjectCount
+        ? Math.round((completedSubjectCount / subjectCount) * 100)
+        : null;
+
+      const { riskStatus, riskReasons } = classifyStudentRisk({
+        attendancePercent: overallAttendancePercent,
+        totalClasses,
+        lastAttendedDate,
+        feeStatus,
+        feeBalance: balance,
+        today: todayStr(),
+      });
+
       return {
         ...student,
+        riskStatus,
+        riskReasons,
+        academicProgressPercent,
         attendanceSummary: {
           totalClasses,
           present,
           absent,
-          overallAttendancePercent: totalClasses
-            ? Math.round((present / totalClasses) * 100)
-            : 0,
+          overallAttendancePercent,
           lastAttendedDate,
         },
         feeSummary: {
