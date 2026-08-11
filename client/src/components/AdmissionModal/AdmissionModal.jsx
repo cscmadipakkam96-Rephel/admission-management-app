@@ -744,6 +744,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                           type="text"
                           name="timings"
                           className="form-control"
+                          placeholder="e.g. 9:00 AM - 11:00 AM"
                           value={formData.timings}
                           onChange={handleChange}
                         />

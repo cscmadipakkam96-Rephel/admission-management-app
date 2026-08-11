@@ -569,6 +569,7 @@ function Form() {
             <input
               type="text"
               name="timings"
+              placeholder="e.g. 9:00 AM - 11:00 AM"
               value={formData.timings}
               onChange={handleChange}
             />

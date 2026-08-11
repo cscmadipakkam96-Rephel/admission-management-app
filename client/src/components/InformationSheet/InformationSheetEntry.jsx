@@ -1037,6 +1037,7 @@ function InformationSheetEntry() {
                       type="text"
                       name="preferred_timings"
                       className="form-control"
+                      placeholder="e.g. 9:00 AM - 11:00 AM"
                       value={formData.preferred_timings}
                       onChange={handleChange}
                     />
