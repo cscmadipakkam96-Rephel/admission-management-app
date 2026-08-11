@@ -2182,7 +2182,7 @@ function TeacherRegister() {
                 <div className="card shadow-sm mb-4">
                   <div className="card-body">
                     <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                      <h5 className="mb-0">My Batches — Create &amp; Manage (v2 test)</h5>
+                      <h5 className="mb-0">My Batches — Create &amp; Manage</h5>
                       {!ownBatchForm && (
                         <button
                           type="button"
