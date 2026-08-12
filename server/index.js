@@ -48,6 +48,7 @@ const expenseRoutes = require("./routes/expenseRoutes");
 const entryAttendanceRoutes = require("./routes/entryAttendanceRoutes");
 const batchRoutes = require("./routes/batchRoutes");
 const followUpRoutes = require("./routes/followUpRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
 const adminAuthRoutes = require("./routes/adminAuthRoutes");
 const requireAdminAuth = require("./middleware/adminAuth");
 
@@ -84,6 +85,7 @@ app.use("/api/admin-auth", adminAuthRoutes);
 app.use("/api/attendance-auth", attendanceAuthRoutes);
 app.use("/api/teacher-auth", teacherAuthRoutes);
 app.use("/api/holidays", holidayRoutes);
+app.use("/api/review", reviewRoutes);
 
 // Everything below requires a logged-in admin
 app.use("/api/admissions", requireAdminAuth, admissionRoutes);

@@ -18,6 +18,7 @@ import ExpenseTracking from "./components/ExpenseTracking/ExpenseTracking";
 import InactiveExpenses from "./components/ExpenseTracking/InactiveExpenses";
 import StudentTracking from "./components/StudentTracking/StudentTracking";
 import FollowUpManagement from "./components/FollowUpManagement/FollowUpManagement";
+import StudentReview from "./components/StudentReview/StudentReview";
 import AttendanceList from "./components/AttendanceList/AttendanceList";
 import AttendanceScanner from "./components/AttendanceScanner/AttendanceScanner";
 import AttendanceRegister from "./components/AttendanceRegister/AttendanceRegister";
@@ -113,6 +114,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/welcome" element={<Landing />} />
+        <Route path="/feedback" element={<StudentReview />} />
         <Route
           path="/attendance/register/:slug"
           element={<AttendanceRegister />}
