@@ -1703,42 +1703,79 @@ function TeacherRegister() {
                             {!b.started_at && batchTopicPickerId === b.id && (
                               <div className="border rounded p-2 mt-2">
                                 <div className="small fw-semibold mb-2">
-                                  What topic are you teaching today?
+                                  What topic are you teaching today? (required to start)
                                 </div>
                                 {batchTopicSuggestionsLoading ? (
                                   <div className="text-muted small">Loading past topics...</div>
                                 ) : (
                                   <>
                                     {(batchTopicSuggestions[b.id] || []).length > 0 && (
-                                      <div className="d-flex flex-wrap gap-2 mb-2">
-                                        {batchTopicSuggestions[b.id].map((topic) => (
-                                          <button
-                                            key={topic}
-                                            type="button"
-                                            className="btn btn-sm btn-outline-primary"
-                                            disabled={batchStartingId === b.id}
-                                            onClick={() => startBatch(b.id, topic)}
-                                          >
-                                            {topic}
-                                          </button>
-                                        ))}
-                                      </div>
+                                      <>
+                                        <div className="text-muted small mb-1">
+                                          Already covered — pick to repeat:
+                                        </div>
+                                        <div className="d-flex flex-wrap gap-2 mb-2">
+                                          {batchTopicSuggestions[b.id].map((topic) => (
+                                            <button
+                                              key={topic}
+                                              type="button"
+                                              className="btn btn-sm btn-outline-primary"
+                                              disabled={batchStartingId === b.id}
+                                              onClick={() => startBatch(b.id, topic)}
+                                            >
+                                              {topic}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </>
                                     )}
-                                    <div className="d-flex gap-2">
+                                    <div className="text-muted small mb-1">
+                                      Or type today's new topic:
+                                    </div>
+                                    <div className="d-flex gap-2 flex-wrap align-items-start">
+                                      <input
+                                        type="text"
+                                        className="form-control form-control-sm"
+                                        style={{ maxWidth: "280px" }}
+                                        placeholder="New topic name (required)"
+                                        value={batchTopicInputs[b.id] || ""}
+                                        onChange={(e) =>
+                                          setBatchTopicInputs((prev) => ({
+                                            ...prev,
+                                            [b.id]: e.target.value,
+                                          }))
+                                        }
+                                      />
                                       <button
                                         type="button"
                                         className="btn btn-sm btn-success"
-                                        disabled={batchStartingId === b.id}
-                                        onClick={() => startBatch(b.id)}
+                                        disabled={
+                                          batchStartingId === b.id ||
+                                          !(batchTopicInputs[b.id] || "").trim()
+                                        }
+                                        onClick={() => {
+                                          const topic = (batchTopicInputs[b.id] || "").trim();
+                                          startBatch(b.id, topic);
+                                          setBatchTopicInputs((prev) => {
+                                            const next = { ...prev };
+                                            delete next[b.id];
+                                            return next;
+                                          });
+                                        }}
                                       >
-                                        {batchStartingId === b.id
-                                          ? "Starting..."
-                                          : "New Topic (name it when class ends)"}
+                                        {batchStartingId === b.id ? "Starting..." : "Start Class"}
                                       </button>
                                       <button
                                         type="button"
                                         className="btn btn-sm btn-secondary"
-                                        onClick={() => setBatchTopicPickerId(null)}
+                                        onClick={() => {
+                                          setBatchTopicPickerId(null);
+                                          setBatchTopicInputs((prev) => {
+                                            const next = { ...prev };
+                                            delete next[b.id];
+                                            return next;
+                                          });
+                                        }}
                                       >
                                         Cancel
                                       </button>

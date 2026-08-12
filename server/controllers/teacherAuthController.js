@@ -561,6 +561,16 @@ const startBatch = async (req, res) => {
     if (!batch_id) {
       return res.status(400).json({ success: false, message: "Batch is required." });
     }
+    // A topic — repeat or brand-new — must be picked before the class can
+    // start at all now, not deferred to End Class anymore. Enforced here
+    // too (not just in the UI) so a direct API call can't bypass it either.
+    if (!topic_covered || !topic_covered.trim()) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Select an already-covered topic or type today's new topic before starting the class.",
+      });
+    }
 
     const teacher = await Teacher.findOne({
       where: { slug, active: true, id: req.teacher.teacherId },
