@@ -243,17 +243,45 @@ const buildChartData = (admissions, field, label, color) => {
   };
 };
 
-// Timings are free-typed at admission ("4 to 6pm", "4-6pm", "10-12PM",
-// "10-12"...) so the same slot ends up as several near-duplicate bars.
-// Normalize to a single canonical "start-end PERIOD" form before counting.
+// Parses one side of a timing range — "7", "7pm", "7:00PM" — regardless of
+// whether minutes/AM-PM are present on this particular side (the other
+// side may carry them instead, e.g. "7-8:30pm").
+const parseTimingToken = (token) => {
+  const match = token.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/);
+  if (!match) return null;
+  return {
+    hour: parseInt(match[1], 10),
+    minute: match[2] ? parseInt(match[2], 10) : 0,
+    period: match[3] || null,
+  };
+};
+
+// Whole-hour minutes are dropped ("7:00" -> "7") so "5pm-6pm" and
+// "5:00pm to 6:00PM" land on the exact same label; genuine non-zero
+// minutes are kept ("7:30-8:15 PM") since that really is a different slot.
+const formatTimingToken = ({ hour, minute }) =>
+  minute ? `${hour}:${String(minute).padStart(2, "0")}` : `${hour}`;
+
+// Timings are free-typed at admission — "4 to 6pm", "4-6pm", "10-12PM",
+// "10am-12pm", "7:00PM-8:00PM", "10-12"... — so the same slot can be typed
+// a dozen different ways. Normalize every variant to one canonical
+// "start-end PERIOD" label before counting, regardless of whether colons,
+// per-side AM/PM, or "to" instead of "-" were used.
 const normalizeTiming = (raw) => {
   if (!raw || !raw.trim()) return "Unknown";
-  let s = raw.trim().toUpperCase().replace(/\s*TO\s*/g, "-");
-  s = s.replace(/\s+/g, "");
-  const match = s.match(/^(\d{1,2})-(\d{1,2})(AM|PM)?$/);
-  if (!match) return raw.trim();
-  const [, start, end, period] = match;
-  return `${start}-${end} ${period || "PM"}`;
+  const normalized = raw.trim().toUpperCase().replace(/\s*TO\s*/g, "-");
+  const parts = normalized.split("-").map((p) => p.trim()).filter(Boolean);
+  if (parts.length !== 2) return raw.trim();
+
+  const start = parseTimingToken(parts[0]);
+  const end = parseTimingToken(parts[1]);
+  if (!start || !end) return raw.trim();
+
+  // Prefer the end side's AM/PM (mirrors the original behavior, which only
+  // ever captured a period at the trailing position), then the start
+  // side's, then default to PM if neither side specified one.
+  const period = end.period || start.period || "PM";
+  return `${formatTimingToken(start)}-${formatTimingToken(end)} ${period}`;
 };
 
 // Sort key in minutes-from-midnight, so bars read left-to-right in actual
@@ -261,8 +289,10 @@ const normalizeTiming = (raw) => {
 // run 9 AM–8 PM, so hours 9-12 are treated as morning and 1-8 as afternoon/
 // evening — more reliable than trusting normalizeTiming's single guessed
 // AM/PM suffix (which can be wrong for crossover ranges like "11-1").
+// Minutes (if the label has any, e.g. "7:30-8:15 PM") aren't needed for
+// this — hour-level granularity is enough to order the bars correctly.
 const timingSortKey = (label) => {
-  const match = label.match(/^(\d{1,2})-\d{1,2} (AM|PM)/);
+  const match = label.match(/^(\d{1,2})(?::\d{2})?-\d{1,2}(?::\d{2})? (AM|PM)/);
   if (!match) return Infinity;
   const start = parseInt(match[1], 10);
   const hour24 = start >= 9 && start <= 12 ? start : start + 12;
