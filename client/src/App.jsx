@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Outlet, useNavigate, useOutletContext } from "react-router-dom";
-import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity, FiPhoneCall } from "react-icons/fi";
+import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity, FiPhoneCall, FiStar } from "react-icons/fi";
 import Form from "./components/AdmissionForm/Form";
 import List from "./components/AdmissionList/List";
 import InactiveList from "./components/InactiveList/InactiveList";
@@ -97,6 +97,9 @@ function AdminLayout() {
           <NavLink to="/entry-attendance">
             <FiLogIn /> Entry Attendance
           </NavLink>
+          <a href="/feedback" target="_blank" rel="noopener noreferrer">
+            <FiStar /> Student Feedback
+          </a>
         </nav>
         <div className="d-flex align-items-center gap-2 text-white flex-shrink-0">
           <AdminProfileMenu adminInfo={adminInfo} onLogout={handleLogout} />
