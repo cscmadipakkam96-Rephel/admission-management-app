@@ -39,6 +39,12 @@ const DIGIT_ONLY_FIELDS = ["aadhar_no", "telephone_no", "mobile_no"];
 const DIGIT_PATTERN = /\D/g;
 const DIGIT_LENGTHS = { aadhar_no: 12, telephone_no: 10, mobile_no: 10 };
 
+// The one canonical shape the Admission Analytics timing chart can merge
+// reliably: "11:00am-12:00pm" — hour:minute + am/pm on both sides, no space
+// around the "-". Case-insensitive so "AM"/"PM"/"am"/"pm" all work.
+const TIMINGS_PATTERN =
+  /^(0?[1-9]|1[0-2]):[0-5]\d\s?(am|pm)-(0?[1-9]|1[0-2]):[0-5]\d\s?(am|pm)$/i;
+
 const calculateAge = (dob) => {
   if (!dob) return "";
   const birthDate = new Date(dob);
@@ -200,6 +206,10 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     ) {
       nextErrors.company_name =
         "Company Name is required since Occupation is Employed.";
+    }
+
+    if (formData.timings.trim() && !TIMINGS_PATTERN.test(formData.timings.trim())) {
+      nextErrors.timings = "Format must be like 11:00am-12:00pm.";
     }
 
     return nextErrors;
@@ -743,11 +753,14 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                         <input
                           type="text"
                           name="timings"
-                          className="form-control"
-                          placeholder="e.g. 9:00 AM - 11:00 AM"
+                          className={`form-control ${errors.timings ? "is-invalid" : ""}`}
+                          placeholder="e.g. 11:00am-12:00pm"
                           value={formData.timings}
                           onChange={handleChange}
                         />
+                        {errors.timings && (
+                          <div className="invalid-feedback">{errors.timings}</div>
+                        )}
                       </div>
                     </div>
                   </div>

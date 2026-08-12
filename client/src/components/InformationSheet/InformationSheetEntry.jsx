@@ -55,6 +55,13 @@ const MOBILE_SEGMENT_LENGTH = 10;
 const COUNSELLING_TIME_PATTERN =
   /^\d{1,2}(:[0-5]\d)?\s*(to\s*\d{1,2}(:[0-5]\d)?)?\s*(AM|PM)$/;
 
+// The one canonical shape the Admission Analytics timing chart can merge
+// reliably: "11:00am-12:00pm" — hour:minute + am/pm on both sides, no space
+// around the "-". Case-insensitive so "AM"/"PM"/"am"/"pm" all work. Same
+// pattern enforced on Admission's own Timings field (AdmissionModal.jsx).
+const TIMINGS_PATTERN =
+  /^(0?[1-9]|1[0-2]):[0-5]\d\s?(am|pm)-(0?[1-9]|1[0-2]):[0-5]\d\s?(am|pm)$/i;
+
 const PLAN_TO_JOIN_OPTIONS = [
   { value: "New", badge: "secondary" },
   { value: "Immediately", badge: "primary" },
@@ -145,6 +152,7 @@ function InformationSheetEntry() {
   const [joinFilter, setJoinFilter] = useState("all");
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(initialForm);
+  const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -279,11 +287,13 @@ function InformationSheetEntry() {
   const openAddModal = () => {
     setEditingId(null);
     setFormData(initialForm);
+    setFormErrors({});
     Modal.getOrCreateInstance(modalRef.current).show();
   };
 
   const openEditModal = (sheet) => {
     setEditingId(sheet.id);
+    setFormErrors({});
     setFormData({
       applicant_name: sheet.applicant_name || "",
       initial: sheet.initial || "",
@@ -361,6 +371,12 @@ function InformationSheetEntry() {
       ...prev,
       [name]: cleanValue,
     }));
+    setFormErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const toggleUpdateChannel = (channel) => {
@@ -392,6 +408,15 @@ function InformationSheetEntry() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (
+      formData.preferred_timings.trim() &&
+      !TIMINGS_PATTERN.test(formData.preferred_timings.trim())
+    ) {
+      setFormErrors({ preferred_timings: "Format must be like 11:00am-12:00pm." });
+      return;
+    }
+    setFormErrors({});
 
     if (
       formData.counselling_time.trim() &&
@@ -1041,11 +1066,14 @@ function InformationSheetEntry() {
                     <input
                       type="text"
                       name="preferred_timings"
-                      className="form-control"
-                      placeholder="e.g. 9:00 AM - 11:00 AM"
+                      className={`form-control ${formErrors.preferred_timings ? "is-invalid" : ""}`}
+                      placeholder="e.g. 11:00am-12:00pm"
                       value={formData.preferred_timings}
                       onChange={handleChange}
                     />
+                    {formErrors.preferred_timings && (
+                      <div className="invalid-feedback">{formErrors.preferred_timings}</div>
+                    )}
                   </div>
                   <div className="col-md-6">
                     <label className="form-label">Plan to Join</label>
