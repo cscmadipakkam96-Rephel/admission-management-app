@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Outlet, useNavigate, useOutletContext } from "react-router-dom";
-import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity } from "react-icons/fi";
+import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity, FiPhoneCall } from "react-icons/fi";
 import Form from "./components/AdmissionForm/Form";
 import List from "./components/AdmissionList/List";
 import InactiveList from "./components/InactiveList/InactiveList";
@@ -17,6 +17,7 @@ import BatchManagement from "./components/BatchManagement/BatchManagement";
 import ExpenseTracking from "./components/ExpenseTracking/ExpenseTracking";
 import InactiveExpenses from "./components/ExpenseTracking/InactiveExpenses";
 import StudentTracking from "./components/StudentTracking/StudentTracking";
+import FollowUpManagement from "./components/FollowUpManagement/FollowUpManagement";
 import AttendanceList from "./components/AttendanceList/AttendanceList";
 import AttendanceScanner from "./components/AttendanceScanner/AttendanceScanner";
 import AttendanceRegister from "./components/AttendanceRegister/AttendanceRegister";
@@ -86,6 +87,9 @@ function AdminLayout() {
           <NavLink to="/student-tracking">
             <FiActivity /> Student Tracking
           </NavLink>
+          <NavLink to="/follow-ups">
+            <FiPhoneCall /> Follow-Up Management
+          </NavLink>
           <NavLink to="/attendance">
             <FiCheckSquare /> Attendance
           </NavLink>
@@ -147,6 +151,7 @@ function App() {
             <Route path="/teachers/inactive" element={<InactiveTeachers />} />
             <Route path="/batches" element={<BatchManagement />} />
             <Route path="/student-tracking" element={<StudentTracking />} />
+            <Route path="/follow-ups" element={<FollowUpManagement />} />
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/scan" element={<AttendanceScanner />} />
             <Route path="/entry-attendance" element={<EntryAttendance />} />

@@ -7,6 +7,7 @@ import API from "../../api/api";
 import AdmissionReportCard from "../AdmissionReportCard/AdmissionReportCard";
 import FeeCharts from "../FeeCharts/FeeCharts";
 import ExpenseEntry from "../ExpenseEntry/ExpenseEntry";
+import AddFollowUpModal from "../FollowUpManagement/AddFollowUpModal";
 import { computeFeeInfo } from "../../utils/feeInfo";
 
 const initialForm = {
@@ -47,6 +48,8 @@ function FeeEntry() {
   const [sortField, setSortField] = useState("paid_date");
   const [sortOrder, setSortOrder] = useState("desc");
   const [chartRange, setChartRange] = useState({ startDate: "", endDate: "" });
+  const [followUpPreselect, setFollowUpPreselect] = useState(null);
+  const [followUpDefaults, setFollowUpDefaults] = useState({ type: "Fee", reason: "", note: "" });
   const ROWS_PER_PAGE = 10;
 
   const fetchData = async () => {
@@ -132,6 +135,19 @@ function FeeEntry() {
   const openViewModal = (entry) => {
     setViewEntry(entry);
     Modal.getOrCreateInstance(viewModalRef.current).show();
+  };
+
+  const openFollowUp = (admission, info) => {
+    setFollowUpPreselect({ type: "admission", record: admission });
+    setFollowUpDefaults({
+      type: "Fee",
+      reason: `${info.status} fee balance`,
+      note:
+        info.balance != null
+          ? `Balance: Rs. ${info.balance}. Call regarding pending payment.`
+          : "Call regarding pending payment.",
+    });
+    Modal.getOrCreateInstance(document.getElementById("addFollowUpModal")).show();
   };
 
   const enrolNoTrimmed = formData.enrol_no.trim();
@@ -897,12 +913,16 @@ function FeeEntry() {
                     <th>Paid</th>
                     <th>Balance</th>
                     <th>Status</th>
+                    {statusFilter === "Pending" && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAdmissions.length === 0 ? (
                     <tr>
-                      <td className="text-center text-muted" colSpan={7}>
+                      <td
+                        className="text-center text-muted"
+                        colSpan={statusFilter === "Pending" ? 8 : 7}
+                      >
                         No {statusFilter.toLowerCase()} records found.
                       </td>
                     </tr>
@@ -953,6 +973,18 @@ function FeeEntry() {
                               {info.status}
                             </span>
                           </td>
+                          {statusFilter === "Pending" && (
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-warning"
+                                title="Follow Up"
+                                onClick={() => openFollowUp(a, info)}
+                              >
+                                <i className="bi bi-telephone-outbound"></i>
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -973,6 +1005,16 @@ function FeeEntry() {
       />
 
       <ExpenseEntry />
+
+      <AddFollowUpModal
+        preselected={followUpPreselect}
+        defaultType={followUpDefaults.type}
+        defaultReason={followUpDefaults.reason}
+        defaultNote={followUpDefaults.note}
+        onSaved={() =>
+          setToast({ variant: "success", message: "Follow-up created successfully" })
+        }
+      />
 
       {/* View Fee Entry Modal */}
       <div

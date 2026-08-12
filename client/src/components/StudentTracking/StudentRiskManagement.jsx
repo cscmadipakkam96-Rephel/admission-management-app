@@ -1,7 +1,19 @@
 import { useMemo, useState } from "react";
+import { Modal } from "bootstrap";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import API from "../../api/api";
+import AddFollowUpModal from "../FollowUpManagement/AddFollowUpModal";
+
+// A reasonable Follow-Up Type guess from which risk signal(s) actually
+// flagged this student — still just a default, editable in the modal.
+const suggestFollowUpType = (reasons) => {
+  const text = (reasons || []).join(" ").toLowerCase();
+  if (text.includes("fee")) return "Fee";
+  if (text.includes("attend")) return "Attendance";
+  return "General";
+};
 
 // Same three tiers server/utils/studentRisk.js classifies every student
 // into — single source of truth for label/emoji/badge class here so the
@@ -74,6 +86,30 @@ function StudentRiskManagement({ students, loading, error, onOpenStudent }) {
   const [teacherFilter, setTeacherFilter] = useState("");
   const [batchFilter, setBatchFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [followUpPreselect, setFollowUpPreselect] = useState(null);
+  const [followUpDefaults, setFollowUpDefaults] = useState({ type: "General", reason: "", note: "" });
+
+  // /batches/student-tracking doesn't carry mobile_no, but the Follow-Up
+  // preview card wants it — fetch the full Admission record on demand,
+  // only when this specific button is actually clicked (not for every row
+  // up front).
+  const openFollowUp = async (student) => {
+    let record = { id: student.id, applicant_name: student.applicant_name, comn_enrol_no: student.comn_enrol_no };
+    try {
+      const response = await API.get(`/admissions/${student.id}`);
+      record = response.data.data;
+    } catch {
+      // Fall back to the partial record already in hand — the modal still
+      // works, just without a phone number in the preview.
+    }
+    setFollowUpPreselect({ type: "admission", record });
+    setFollowUpDefaults({
+      type: suggestFollowUpType(student.riskReasons),
+      reason: `${student.riskStatus === "at_risk" ? "At Risk" : "Needs Attention"} — flagged in Risk Management`,
+      note: (student.riskReasons || []).join("; "),
+    });
+    Modal.getOrCreateInstance(document.getElementById("addFollowUpModal")).show();
+  };
 
   const subjectOptions = useMemo(
     () =>
@@ -449,7 +485,7 @@ function StudentRiskManagement({ students, loading, error, onOpenStudent }) {
                         <span className="text-muted">No issues</span>
                       )}
                     </td>
-                    <td>
+                    <td className="d-flex gap-2">
                       <button
                         type="button"
                         className="btn btn-sm btn-outline-primary"
@@ -457,6 +493,14 @@ function StudentRiskManagement({ students, loading, error, onOpenStudent }) {
                         onClick={() => onOpenStudent(s.id)}
                       >
                         <i className="bi bi-eye"></i>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-warning"
+                        title="Follow Up"
+                        onClick={() => openFollowUp(s)}
+                      >
+                        <i className="bi bi-telephone-outbound"></i>
                       </button>
                     </td>
                   </tr>
@@ -466,6 +510,14 @@ function StudentRiskManagement({ students, loading, error, onOpenStudent }) {
           </table>
         </div>
       )}
+
+      <AddFollowUpModal
+        preselected={followUpPreselect}
+        defaultType={followUpDefaults.type}
+        defaultReason={followUpDefaults.reason}
+        defaultNote={followUpDefaults.note}
+        onSaved={() => {}}
+      />
     </div>
   );
 }

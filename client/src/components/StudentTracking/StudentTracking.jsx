@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -49,6 +49,8 @@ const formatMonthLabel = (yearMonth) => {
 };
 
 function StudentTracking() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -62,6 +64,7 @@ function StudentTracking() {
   const [expandedSubjectKey, setExpandedSubjectKey] = useState(null);
   const [activeTab, setActiveTab] = useState("tracking");
   const [pendingScrollId, setPendingScrollId] = useState(null);
+  const [crossPageNotice, setCrossPageNotice] = useState("");
 
   const handleOpenFromRisk = (id) => {
     setActiveTab("tracking");
@@ -75,6 +78,24 @@ function StudentTracking() {
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
     setPendingScrollId(null);
   }, [pendingScrollId, activeTab]);
+
+  // Cross-page open from Follow-Up Management's "View Student 360°" —
+  // navigate(..., {state:{openStudentId}}) lands here. /batches/student-tracking
+  // only returns students currently in an active batch, so a follow-up can
+  // legitimately point at a student not present here — show a notice
+  // instead of silently doing nothing.
+  useEffect(() => {
+    const targetId = location.state?.openStudentId;
+    if (!targetId || loading) return;
+    const found = students.some((s) => s.id === targetId);
+    if (found) {
+      handleOpenFromRisk(targetId);
+    } else {
+      setCrossPageNotice("This student has no active batch enrollment to show here yet.");
+    }
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, students]);
 
   useEffect(() => {
     const fetchTracking = async () => {
@@ -272,6 +293,16 @@ function StudentTracking() {
   return (
     <div className="card shadow-sm mt-4">
       <div className="card-body">
+        {crossPageNotice && (
+          <div className="alert alert-warning alert-dismissible py-2" role="alert">
+            {crossPageNotice}
+            <button
+              type="button"
+              className="btn-close"
+              onClick={() => setCrossPageNotice("")}
+            ></button>
+          </div>
+        )}
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <h3 className="mb-0">
             <i className="bi bi-person-lines-fill me-2 text-primary"></i>Student Tracking

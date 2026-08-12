@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Modal } from "bootstrap";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
+import AddFollowUpModal from "../FollowUpManagement/AddFollowUpModal";
 
 const initialForm = {
   applicant_name: "",
@@ -143,6 +144,8 @@ function InformationSheetEntry() {
   const modalRef = useRef(null);
   const deleteModalRef = useRef(null);
   const viewModalRef = useRef(null);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [sheets, setSheets] = useState([]);
   const [courseOptions, setCourseOptions] = useState([]);
@@ -158,6 +161,8 @@ function InformationSheetEntry() {
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [viewSheet, setViewSheet] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [followUpPreselect, setFollowUpPreselect] = useState(null);
+  const [crossPageNotice, setCrossPageNotice] = useState("");
   const ROWS_PER_PAGE = 10;
 
   const fetchSheets = async () => {
@@ -177,6 +182,24 @@ function InformationSheetEntry() {
   useEffect(() => {
     fetchSheets();
   }, []);
+
+  // Cross-page open from Follow-Up Management's "View Information Sheet" —
+  // navigate(..., {state:{openSheetId}}) lands here; open the existing View
+  // modal once sheets have loaded, or show a notice if the sheet is gone
+  // (e.g. soft-deleted since the follow-up was created) rather than
+  // silently doing nothing.
+  useEffect(() => {
+    const targetId = location.state?.openSheetId;
+    if (!targetId || loading) return;
+    const sheet = sheets.find((s) => s.id === targetId);
+    if (sheet) {
+      openViewModal(sheet);
+    } else {
+      setCrossPageNotice("This information sheet is inactive or no longer available.");
+    }
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, sheets]);
 
   useEffect(() => {
     const fetchCourses = async () => {
@@ -466,6 +489,11 @@ function InformationSheetEntry() {
     Modal.getOrCreateInstance(deleteModalRef.current).show();
   };
 
+  const openFollowUp = (sheet) => {
+    setFollowUpPreselect({ type: "information_sheet", record: sheet });
+    Modal.getOrCreateInstance(document.getElementById("addFollowUpModal")).show();
+  };
+
   const handleDelete = async () => {
     try {
       await API.delete(`/information-sheets/${pendingDeleteId}`);
@@ -509,6 +537,19 @@ function InformationSheetEntry() {
 
       <div className="card shadow-sm">
         <div className="card-body">
+          {crossPageNotice && (
+            <div
+              className="alert alert-warning alert-dismissible py-2"
+              role="alert"
+            >
+              {crossPageNotice}
+              <button
+                type="button"
+                className="btn-close"
+                onClick={() => setCrossPageNotice("")}
+              ></button>
+            </div>
+          )}
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <h4 className="mb-0">Information Sheet</h4>
             <div className="d-flex gap-2 flex-wrap">
@@ -641,6 +682,16 @@ function InformationSheetEntry() {
                         >
                           <i className="bi bi-trash"></i>
                         </button>
+                        {s.effective_plan_to_join !== "Joined" && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-warning"
+                            title="Follow Up"
+                            onClick={() => openFollowUp(s)}
+                          >
+                            <i className="bi bi-telephone-outbound"></i>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -1361,6 +1412,15 @@ function InformationSheetEntry() {
           </div>
         </div>
       </div>
+
+      <AddFollowUpModal
+        preselected={followUpPreselect}
+        defaultType="Enquiry"
+        defaultReason="Course enquiry not converted"
+        onSaved={() =>
+          setToast({ variant: "success", message: "Follow-up created successfully" })
+        }
+      />
     </div>
   );
 }
