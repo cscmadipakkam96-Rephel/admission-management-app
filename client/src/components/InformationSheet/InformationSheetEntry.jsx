@@ -217,8 +217,13 @@ function InformationSheetEntry() {
   }, [loading]);
 
   const filteredSheets = sheets.filter((s) => {
-    if (joinFilter === "joined" && !s.is_joined) return false;
-    if (joinFilter === "not_joined" && s.is_joined) return false;
+    // Match what the "Plan to Join" badge actually shows (auto-detected
+    // via phone-match OR manually set to "Joined" by staff) — filtering by
+    // the raw is_joined flag alone missed manually-marked records, showing
+    // a "Joined" badge under the "Not Joined" tab.
+    const isJoinedForFilter = s.effective_plan_to_join === "Joined";
+    if (joinFilter === "joined" && !isJoinedForFilter) return false;
+    if (joinFilter === "not_joined" && isJoinedForFilter) return false;
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     return (
