@@ -411,7 +411,7 @@ const getTeacherBatchProgress = async (req, res) => {
     const batchIds = batches.map((b) => b.id);
     const sessions = batchIds.length
       ? await BatchSession.findAll({
-          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null } },
+          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null }, cancelled_at: null },
           order: [["date", "ASC"]],
         })
       : [];
@@ -503,7 +503,7 @@ const getSubjectCompletionChart = async (req, res) => {
       : [];
     const sessions = batchIds.length
       ? await BatchSession.findAll({
-          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null } },
+          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null }, cancelled_at: null },
           order: [["date", "ASC"]],
         })
       : [];
@@ -669,7 +669,7 @@ const getStudentTracking = async (req, res) => {
     const batchIds = batches.map((b) => b.id);
     const sessions = batchIds.length
       ? await BatchSession.findAll({
-          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null } },
+          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null }, cancelled_at: null },
           order: [["date", "ASC"]],
         })
       : [];

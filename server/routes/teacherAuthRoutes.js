@@ -16,6 +16,9 @@ const {
   unmarkSubjectComplete,
   getBatchTopicSuggestions,
   restartBatch,
+  cancelOnlineBatch,
+  generateJoinLink,
+  joinOnlineClass,
   login,
   teacherLogout,
   getTeacherMe,
@@ -31,6 +34,12 @@ const requireTeacherAuth = require("../middleware/teacherAuth");
 // email) — it never grants access by itself, actual login below still
 // checks the real password.
 router.get("/lookup/:slug", lookupBySlug);
+
+// Public: a student opens their own per-session join link, no login. The
+// controller re-verifies the signed token and the class's live state on
+// every request — this route is intentionally the only unauthenticated
+// write-adjacent surface Online Class introduces.
+router.get("/online-class/join/:token", joinOnlineClass);
 
 // Everything below reveals a teacher's data or performs an action on their
 // behalf — these require the session cookie login sets, and the controller
@@ -49,6 +58,11 @@ router.post("/mark-subject-complete", requireTeacherAuth, markSubjectComplete);
 router.post("/unmark-subject-complete", requireTeacherAuth, unmarkSubjectComplete);
 router.get("/batch-topics/:batchId", requireTeacherAuth, getBatchTopicSuggestions);
 router.post("/restart-batch", requireTeacherAuth, restartBatch);
+
+// Online Class — gated per-teacher by Teacher.can_host_online_classes
+// (checked inside startBatch/cancelOnlineBatch).
+router.post("/cancel-online-batch", requireTeacherAuth, cancelOnlineBatch);
+router.post("/online-class/generate-link", requireTeacherAuth, generateJoinLink);
 
 // Teacher self-service batch creation — gated per-teacher by
 // Teacher.can_create_batches (checked inside createOwnBatch).

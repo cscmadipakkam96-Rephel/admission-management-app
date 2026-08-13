@@ -16,6 +16,7 @@ const initialForm = {
   salary: "",
   status: "Active",
   can_create_batches: false,
+  can_host_online_classes: false,
 };
 
 const STATUSES = ["Active", "Inactive"];
@@ -235,6 +236,7 @@ function TeacherManagement() {
       salary: teacher.salary || "",
       status: teacher.status || "Active",
       can_create_batches: teacher.can_create_batches || false,
+      can_host_online_classes: teacher.can_host_online_classes || false,
     });
     setFormErrors({});
     setSelectedCourseIds((teacher.Courses || []).map((c) => c.id));
@@ -569,6 +571,7 @@ function TeacherManagement() {
                   </th>
                   <th>Status</th>
                   <th>Batch Creation</th>
+                  <th>Online Class</th>
                   <th>Assigned Students</th>
                   <th>Actions</th>
                 </tr>
@@ -615,6 +618,13 @@ function TeacherManagement() {
                           className={`badge ${t.can_create_batches ? "bg-success" : "bg-secondary"}`}
                         >
                           {t.can_create_batches ? "Enabled" : "Disabled"}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${t.can_host_online_classes ? "bg-success" : "bg-secondary"}`}
+                        >
+                          {t.can_host_online_classes ? "Enabled" : "Disabled"}
                         </span>
                       </td>
                       <td>
@@ -867,6 +877,28 @@ function TeacherManagement() {
                         htmlFor="canCreateBatches"
                       >
                         Allow this teacher to create their own batches
+                      </label>
+                    </div>
+                  </div>
+                  <div className="col-md-4 d-flex align-items-end">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="canHostOnlineClasses"
+                        checked={formData.can_host_online_classes}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            can_host_online_classes: e.target.checked,
+                          }))
+                        }
+                      />
+                      <label
+                        className="form-check-label"
+                        htmlFor="canHostOnlineClasses"
+                      >
+                        Allow this teacher to host online classes
                       </label>
                     </div>
                   </div>

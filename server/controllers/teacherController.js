@@ -64,6 +64,7 @@ const buildPayload = (body) => ({
   salary: body.salary === "" || body.salary === undefined ? null : body.salary,
   status: body.status || "Active",
   can_create_batches: !!body.can_create_batches,
+  can_host_online_classes: !!body.can_host_online_classes,
 });
 
 const createTeacher = async (req, res) => {

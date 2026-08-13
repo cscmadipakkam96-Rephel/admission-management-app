@@ -81,6 +81,13 @@ const Teacher = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    // Off by default for every teacher — admin must explicitly grant this
+    // per teacher before the Online Class option appears in Start Class.
+    can_host_online_classes: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
   },
   {
     tableName: "teachers",

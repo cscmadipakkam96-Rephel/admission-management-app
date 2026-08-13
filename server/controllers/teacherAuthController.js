@@ -12,6 +12,7 @@ require("../models/CourseSubject");
 const Batch = require("../models/Batch");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
+const BatchStudent = require("../models/BatchStudent");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
 const { findConflicts } = require("../utils/batchConflicts");
@@ -26,7 +27,12 @@ const { coursesForSubject, includeOptionsFor } = require("./batchController");
 const getStudentsAlreadyCompletedTopic = async (batchId, topic, todayStr, studentIds) => {
   if (!topic || !studentIds.length) return new Set();
   const pastSessions = await BatchSession.findAll({
-    where: { batch_id: batchId, topic_covered: topic, date: { [Op.ne]: todayStr } },
+    where: {
+      batch_id: batchId,
+      topic_covered: topic,
+      date: { [Op.ne]: todayStr },
+      cancelled_at: null,
+    },
   });
   if (!pastSessions.length) return new Set();
   const pastDates = pastSessions.map((s) => s.date);
@@ -368,6 +374,7 @@ const getDashboard = async (req, res) => {
           qualification: teacher.qualification,
           courses: (teacher.Courses || []).map((c) => c.course_name),
           can_create_batches: teacher.can_create_batches,
+          can_host_online_classes: teacher.can_host_online_classes,
         },
         courseSyllabus,
         holiday: todayHoliday
@@ -398,6 +405,10 @@ const getDashboard = async (req, res) => {
             started_at: session?.started_at || null,
             ended_at: session?.ended_at || null,
             topic_covered: session?.topic_covered || null,
+            class_mode: session?.class_mode || "Offline",
+            meeting_link: session?.meeting_link || null,
+            meeting_provider: session?.meeting_provider || null,
+            cancelled_at: session?.cancelled_at || null,
             students: allStudents
               .filter((s) => !excludedIds.has(s.id))
               .map((s) => ({
@@ -557,7 +568,7 @@ const markAvailableToday = async (req, res) => {
 
 const startBatch = async (req, res) => {
   try {
-    const { slug, batch_id, topic_covered } = req.body;
+    const { slug, batch_id, topic_covered, class_mode, meeting_link, meeting_provider } = req.body;
     if (!batch_id) {
       return res.status(400).json({ success: false, message: "Batch is required." });
     }
@@ -572,11 +583,27 @@ const startBatch = async (req, res) => {
       });
     }
 
+    const isOnline = class_mode === "Online";
+
     const teacher = await Teacher.findOne({
       where: { slug, active: true, id: req.teacher.teacherId },
     });
     if (!teacher) {
       return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+    // Never trust a frontend-only gate — an Online class can only be
+    // started server-side by a teacher the admin explicitly authorized.
+    if (isOnline && !teacher.can_host_online_classes) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to host online classes. Ask your admin to enable it.",
+      });
+    }
+    if (isOnline && (!meeting_link || !meeting_link.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Add the meeting link before starting an online class.",
+      });
     }
 
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -599,13 +626,20 @@ const startBatch = async (req, res) => {
         teacher_id: teacher.id,
         started_at: new Date(),
         topic_covered: topic_covered && topic_covered.trim() ? topic_covered.trim() : null,
+        class_mode: isOnline ? "Online" : "Offline",
+        meeting_link: isOnline ? meeting_link.trim() : null,
+        meeting_provider: isOnline ? meeting_provider || "google_meet" : null,
       },
     });
 
     res.status(200).json({
       success: true,
       message: "Class started",
-      data: { started_at: session.started_at, topic_covered: session.topic_covered },
+      data: {
+        started_at: session.started_at,
+        topic_covered: session.topic_covered,
+        class_mode: session.class_mode,
+      },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -746,6 +780,176 @@ const restartBatch = async (req, res) => {
   }
 };
 
+// Cancels a live Online class before it's ended. Unlike restartBatch, the
+// BatchSession row is kept (only cancelled_at is set) — a cancelled attempt
+// stays visible as history instead of vanishing. Any attendance marked so
+// far is wiped so a cancelled class can never look like a completed one.
+// A teacher who wants a full do-over same day still uses the existing,
+// unmodified "Restart Class" button — its only guard is ended_at, so a
+// cancelled-but-not-ended session already passes it and gets cleanly
+// deleted+recreated on the next Start Class.
+const cancelOnlineBatch = async (req, res) => {
+  try {
+    const { slug, batch_id } = req.body;
+    if (!batch_id) {
+      return res.status(400).json({ success: false, message: "Batch is required." });
+    }
+
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true, id: req.teacher.teacherId },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const batch = await Batch.findOne({ where: { id: batch_id, active: true } });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    if (batch.teacher_id !== teacher.id) {
+      return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
+    }
+
+    const session = await BatchSession.findOne({
+      where: { batch_id: batch.id, date: todayStr },
+    });
+    if (!session) {
+      return res.status(400).json({ success: false, message: "This class hasn't been started." });
+    }
+    if (session.class_mode !== "Online") {
+      return res.status(400).json({ success: false, message: "This isn't an online class." });
+    }
+    if (session.cancelled_at) {
+      return res.status(400).json({ success: false, message: "This class was already cancelled." });
+    }
+    if (session.ended_at) {
+      return res.status(400).json({
+        success: false,
+        message: "This class has already ended — it can't be cancelled.",
+      });
+    }
+
+    await Attendance.destroy({ where: { batch_id: batch.id, date: todayStr } });
+    await session.update({ cancelled_at: new Date() });
+
+    res.status(200).json({
+      success: true,
+      message: "Online class cancelled — the join link no longer works.",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Signs a short-lived, single-student join token for a live Online class.
+// Generated on demand per student (the teacher clicks "Copy Link" for one
+// student at a time) rather than pre-generated in bulk. The token only
+// carries identity (who, which batch, which session date) — joinOnlineClass
+// always re-derives the actual live/cancelled/ended state fresh from the DB
+// rather than trusting anything else in the token as current truth.
+const generateJoinLink = async (req, res) => {
+  try {
+    const { slug, batch_id, admission_id } = req.body;
+    if (!batch_id || !admission_id) {
+      return res.status(400).json({ success: false, message: "Batch and student are required." });
+    }
+
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true, id: req.teacher.teacherId },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const batch = await Batch.findOne({ where: { id: batch_id, active: true } });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    if (batch.teacher_id !== teacher.id) {
+      return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
+    }
+
+    const session = await BatchSession.findOne({
+      where: { batch_id: batch.id, date: todayStr },
+    });
+    if (!session || session.class_mode !== "Online" || !session.started_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live." });
+    }
+    if (session.ended_at || session.cancelled_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live anymore." });
+    }
+
+    const enrolled = await BatchStudent.findOne({
+      where: { batch_id: batch.id, admission_id },
+    });
+    if (!enrolled) {
+      return res.status(404).json({ success: false, message: "This student isn't in this batch." });
+    }
+
+    const token = jwt.sign(
+      { type: "online_join", batch_id: batch.id, admission_id: Number(admission_id), session_date: todayStr },
+      process.env.JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    res.status(200).json({ success: true, data: { token } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Public — a student opens this via their own join link, no login. Verifies
+// the token's identity claims, then re-derives live state fresh from the DB
+// (never trusts the token as current truth) before ever revealing the real
+// meeting link.
+const joinOnlineClass = async (req, res) => {
+  try {
+    const { token } = req.params;
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ success: false, message: "This join link is invalid or expired." });
+    }
+    if (decoded.type !== "online_join") {
+      return res.status(401).json({ success: false, message: "This join link is invalid." });
+    }
+
+    const { batch_id, admission_id, session_date } = decoded;
+    const session = await BatchSession.findOne({ where: { batch_id, date: session_date } });
+    if (!session) {
+      return res.status(404).json({ success: false, message: "This class doesn't exist." });
+    }
+    if (session.cancelled_at) {
+      return res.status(410).json({ success: false, message: "This class was cancelled." });
+    }
+    if (session.ended_at) {
+      return res.status(410).json({ success: false, message: "This class has already ended." });
+    }
+
+    const enrolled = await BatchStudent.findOne({ where: { batch_id, admission_id } });
+    if (!enrolled) {
+      return res.status(403).json({ success: false, message: "You're not enrolled in this batch." });
+    }
+
+    const batch = await Batch.findByPk(batch_id, { include: [{ model: Teacher }] });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        meeting_link: session.meeting_link,
+        batch_name: batch?.batch_name || null,
+        topic_covered: session.topic_covered,
+        teacher_name: batch?.Teacher?.teacher_name || null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Topics already covered in this batch — shown as suggestions when
 // starting class, so the teacher can pick a repeat instead of retyping it.
 const getBatchTopicSuggestions = async (req, res) => {
@@ -758,7 +962,7 @@ const getBatchTopicSuggestions = async (req, res) => {
       return res.status(404).json({ success: false, message: "Batch not found" });
     }
     const sessions = await BatchSession.findAll({
-      where: { batch_id: batch.id, topic_covered: { [Op.ne]: null } },
+      where: { batch_id: batch.id, topic_covered: { [Op.ne]: null }, cancelled_at: null },
       order: [["date", "DESC"]],
     });
     const topics = [...new Set(sessions.map((s) => s.topic_covered))];
@@ -793,7 +997,7 @@ const getBatchProgress = async (req, res) => {
     const batchIds = batches.map((b) => b.id);
     const sessions = batchIds.length
       ? await BatchSession.findAll({
-          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null } },
+          where: { batch_id: batchIds, topic_covered: { [Op.ne]: null }, cancelled_at: null },
           order: [["date", "ASC"]],
         })
       : [];
@@ -1336,6 +1540,9 @@ module.exports = {
   unmarkSubjectComplete,
   getBatchTopicSuggestions,
   restartBatch,
+  cancelOnlineBatch,
+  generateJoinLink,
+  joinOnlineClass,
   login,
   teacherLogout,
   getTeacherMe,

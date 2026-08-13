@@ -171,6 +171,13 @@ function TeacherRegister() {
   const [batchTopicInputs, setBatchTopicInputs] = useState({});
   const [batchRestartingId, setBatchRestartingId] = useState(null);
   const [batchTopicPickerId, setBatchTopicPickerId] = useState(null);
+  // Online Class — only relevant when dashboard.teacher.can_host_online_classes
+  // is true (admin-granted), same gating pattern as own-batch creation above.
+  const [onlineModeByBatch, setOnlineModeByBatch] = useState({});
+  const [onlineLinkInputs, setOnlineLinkInputs] = useState({});
+  const [onlineProviderInputs, setOnlineProviderInputs] = useState({});
+  const [batchCancellingId, setBatchCancellingId] = useState(null);
+  const [copyingLinkFor, setCopyingLinkFor] = useState(null);
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
   const [expandedSubjectIds, setExpandedSubjectIds] = useState(() => new Set());
@@ -379,13 +386,21 @@ function TeacherRegister() {
     }
   };
 
-  const startBatch = async (batchId, topic) => {
+  const startBatch = async (batchId, topic, mode, meetingLink, provider) => {
+    const isOnline = mode === "Online";
+    if (isOnline && !(meetingLink || "").trim()) {
+      setToast({ variant: "danger", message: "Add the meeting link before starting an online class." });
+      return;
+    }
     setBatchStartingId(batchId);
     try {
       const response = await API.post("/teacher-auth/start-batch", {
         slug,
         batch_id: batchId,
         topic_covered: topic || undefined,
+        class_mode: isOnline ? "Online" : "Offline",
+        meeting_link: isOnline ? meetingLink.trim() : undefined,
+        meeting_provider: isOnline ? provider || "google_meet" : undefined,
       });
       setDashboard((prev) => ({
         ...prev,
@@ -395,12 +410,22 @@ function TeacherRegister() {
                 ...b,
                 started_at: response.data.data.started_at,
                 topic_covered: response.data.data.topic_covered,
+                class_mode: response.data.data.class_mode,
+                meeting_link: isOnline ? meetingLink.trim() : null,
+                meeting_provider: isOnline ? provider || "google_meet" : null,
+                cancelled_at: null,
               }
             : b
         ),
       }));
       setBatchTopicPickerId(null);
-      setToast({ variant: "success", message: "Class started" });
+      setOnlineModeByBatch((prev) => ({ ...prev, [batchId]: "Offline" }));
+      setOnlineLinkInputs((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
+      setToast({ variant: "success", message: isOnline ? "Online class started" : "Class started" });
     } catch (err) {
       setToast({
         variant: "danger",
@@ -515,6 +540,10 @@ function TeacherRegister() {
                 started_at: null,
                 ended_at: null,
                 topic_covered: null,
+                class_mode: "Offline",
+                meeting_link: null,
+                meeting_provider: null,
+                cancelled_at: null,
                 students: b.students.map((s) => ({ ...s, already_present: false })),
               }
             : b
@@ -529,6 +558,88 @@ function TeacherRegister() {
       });
     } finally {
       setBatchRestartingId(null);
+    }
+  };
+
+  // Cancels a live online class — the join link stops working for every
+  // student and any attendance marked so far is cleared server-side. The
+  // BatchSession row itself survives (cancelled_at set, not deleted); if the
+  // teacher wants a full do-over today, the existing Restart Class button
+  // (still shown for a cancelled-but-not-ended session) already handles that.
+  const cancelOnlineClass = async (batchId) => {
+    if (
+      !window.confirm(
+        "Cancel this online class? Students won't be able to join, and any attendance already marked today for this batch will be cleared."
+      )
+    ) {
+      return;
+    }
+    setBatchCancellingId(batchId);
+    try {
+      await API.post("/teacher-auth/cancel-online-batch", { slug, batch_id: batchId });
+      setDashboard((prev) => ({
+        ...prev,
+        todayBatches: prev.todayBatches.map((b) =>
+          b.id === batchId
+            ? {
+                ...b,
+                cancelled_at: new Date().toISOString(),
+                students: b.students.map((s) => ({ ...s, already_present: false })),
+              }
+            : b
+        ),
+      }));
+      setToast({ variant: "success", message: "Online class cancelled." });
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.response?.data?.message || "Failed to cancel the class.",
+      });
+    } finally {
+      setBatchCancellingId(null);
+    }
+  };
+
+  // Generates one student's join link on demand and copies it — never
+  // pre-generated in bulk. Reuses the same clipboard-with-HTTPS-fallback
+  // pattern as TeacherManagement.jsx's copyLoginLink, since navigator.clipboard
+  // requires a secure context and this app is also served over plain HTTP.
+  const copyStudentJoinLink = async (batchId, admissionId, studentName) => {
+    const key = `${batchId}-${admissionId}`;
+    setCopyingLinkFor(key);
+    try {
+      const response = await API.post("/teacher-auth/online-class/generate-link", {
+        slug,
+        batch_id: batchId,
+        admission_id: admissionId,
+      });
+      const link = `${window.location.origin}/online-class/join/${response.data.data.token}`;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(link);
+        } else {
+          const textarea = document.createElement("textarea");
+          textarea.value = link;
+          textarea.style.position = "fixed";
+          textarea.style.opacity = "0";
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          const copied = document.execCommand("copy");
+          document.body.removeChild(textarea);
+          if (!copied) throw new Error("execCommand copy failed");
+        }
+        setToast({ variant: "success", message: `Join link copied for ${studentName}` });
+      } catch {
+        setToast({ variant: "danger", message: link });
+      }
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.response?.data?.message || "Failed to generate the join link.",
+      });
+    } finally {
+      setCopyingLinkFor(null);
     }
   };
 
@@ -1638,6 +1749,18 @@ function TeacherRegister() {
                                     {new Date(b.started_at).toLocaleTimeString("en-IN")}
                                   </span>
                                 )}
+                                {b.started_at && b.class_mode === "Online" && !b.cancelled_at && (
+                                  <span className="badge bg-info text-dark">
+                                    <i className="bi bi-camera-video me-1"></i>
+                                    Online
+                                  </span>
+                                )}
+                                {b.cancelled_at && (
+                                  <span className="badge bg-danger">
+                                    <i className="bi bi-x-circle me-1"></i>
+                                    Cancelled
+                                  </span>
+                                )}
                                 {b.ended_at && (
                                   <span className="badge bg-secondary">
                                     <i className="bi bi-stop-circle me-1"></i>
@@ -1657,6 +1780,7 @@ function TeacherRegister() {
                                 )}
                                 {b.started_at &&
                                   !b.ended_at &&
+                                  !b.cancelled_at &&
                                   batchEndingTopicId !== b.id &&
                                   (() => {
                                     const canEnd =
@@ -1684,24 +1808,100 @@ function TeacherRegister() {
                                         >
                                           {batchEndingId === b.id ? "Ending..." : "End Class"}
                                         </button>
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-outline-secondary"
-                                          disabled={batchRestartingId === b.id}
-                                          title="Undo this class — clears any attendance marked today and lets you start over."
-                                          onClick={() => restartBatch(b.id)}
-                                        >
-                                          {batchRestartingId === b.id
-                                            ? "Restarting..."
-                                            : "Restart Class"}
-                                        </button>
+                                        {b.class_mode === "Online" && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-warning"
+                                            disabled={batchCancellingId === b.id}
+                                            title="Cancel this online class — students won't be able to join."
+                                            onClick={() => cancelOnlineClass(b.id)}
+                                          >
+                                            {batchCancellingId === b.id ? "Cancelling..." : "Cancel Online Class"}
+                                          </button>
+                                        )}
                                       </>
                                     );
                                   })()}
+                                {b.started_at && !b.ended_at && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-secondary"
+                                    disabled={batchRestartingId === b.id}
+                                    title="Undo this class — clears any attendance marked today and lets you start over."
+                                    onClick={() => restartBatch(b.id)}
+                                  >
+                                    {batchRestartingId === b.id ? "Restarting..." : "Restart Class"}
+                                  </button>
+                                )}
                               </div>
                             )}
                             {!b.started_at && batchTopicPickerId === b.id && (
                               <div className="border rounded p-2 mt-2">
+                                {dashboard.teacher?.can_host_online_classes && (
+                                  <div className="mb-2">
+                                    <div className="small fw-semibold mb-1">Class mode</div>
+                                    <div className="btn-group btn-group-sm mb-2" role="group">
+                                      <button
+                                        type="button"
+                                        className={`btn ${
+                                          (onlineModeByBatch[b.id] || "Offline") === "Offline"
+                                            ? "btn-primary"
+                                            : "btn-outline-primary"
+                                        }`}
+                                        onClick={() =>
+                                          setOnlineModeByBatch((prev) => ({ ...prev, [b.id]: "Offline" }))
+                                        }
+                                      >
+                                        Offline
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`btn ${
+                                          onlineModeByBatch[b.id] === "Online"
+                                            ? "btn-primary"
+                                            : "btn-outline-primary"
+                                        }`}
+                                        onClick={() =>
+                                          setOnlineModeByBatch((prev) => ({ ...prev, [b.id]: "Online" }))
+                                        }
+                                      >
+                                        <i className="bi bi-camera-video me-1"></i>Online
+                                      </button>
+                                    </div>
+                                    {onlineModeByBatch[b.id] === "Online" && (
+                                      <div className="d-flex gap-2 flex-wrap align-items-start mb-2">
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          style={{ maxWidth: "320px" }}
+                                          placeholder="Meeting link (e.g. Google Meet) — required"
+                                          value={onlineLinkInputs[b.id] || ""}
+                                          onChange={(e) =>
+                                            setOnlineLinkInputs((prev) => ({
+                                              ...prev,
+                                              [b.id]: e.target.value,
+                                            }))
+                                          }
+                                        />
+                                        <select
+                                          className="form-select form-select-sm"
+                                          style={{ maxWidth: "160px" }}
+                                          value={onlineProviderInputs[b.id] || "google_meet"}
+                                          onChange={(e) =>
+                                            setOnlineProviderInputs((prev) => ({
+                                              ...prev,
+                                              [b.id]: e.target.value,
+                                            }))
+                                          }
+                                        >
+                                          <option value="google_meet">Google Meet</option>
+                                          <option value="jitsi">Jitsi</option>
+                                          <option value="zoom">Zoom</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="small fw-semibold mb-2">
                                   What topic are you teaching today? (required to start)
                                 </div>
@@ -1720,8 +1920,20 @@ function TeacherRegister() {
                                               key={topic}
                                               type="button"
                                               className="btn btn-sm btn-outline-primary"
-                                              disabled={batchStartingId === b.id}
-                                              onClick={() => startBatch(b.id, topic)}
+                                              disabled={
+                                                batchStartingId === b.id ||
+                                                (onlineModeByBatch[b.id] === "Online" &&
+                                                  !(onlineLinkInputs[b.id] || "").trim())
+                                              }
+                                              onClick={() =>
+                                                startBatch(
+                                                  b.id,
+                                                  topic,
+                                                  onlineModeByBatch[b.id],
+                                                  onlineLinkInputs[b.id],
+                                                  onlineProviderInputs[b.id]
+                                                )
+                                              }
                                             >
                                               {topic}
                                             </button>
@@ -1751,11 +1963,19 @@ function TeacherRegister() {
                                         className="btn btn-sm btn-success"
                                         disabled={
                                           batchStartingId === b.id ||
-                                          !(batchTopicInputs[b.id] || "").trim()
+                                          !(batchTopicInputs[b.id] || "").trim() ||
+                                          (onlineModeByBatch[b.id] === "Online" &&
+                                            !(onlineLinkInputs[b.id] || "").trim())
                                         }
                                         onClick={() => {
                                           const topic = (batchTopicInputs[b.id] || "").trim();
-                                          startBatch(b.id, topic);
+                                          startBatch(
+                                            b.id,
+                                            topic,
+                                            onlineModeByBatch[b.id],
+                                            onlineLinkInputs[b.id],
+                                            onlineProviderInputs[b.id]
+                                          );
                                           setBatchTopicInputs((prev) => {
                                             const next = { ...prev };
                                             delete next[b.id];
@@ -1879,21 +2099,36 @@ function TeacherRegister() {
                                           </div>
                                         )}
                                       </div>
-                                      {s.already_present ? (
-                                        <span className="badge bg-success">
-                                          <i className="bi bi-check-lg me-1"></i>
-                                          Present
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-success"
-                                          disabled={batchMarkingId === s.id}
-                                          onClick={() => markBatchPresent(s.id, b.id)}
-                                        >
-                                          {batchMarkingId === s.id ? "..." : "Mark Present"}
-                                        </button>
-                                      )}
+                                      <div className="d-flex align-items-center gap-2">
+                                        {b.class_mode === "Online" && !b.cancelled_at && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-info"
+                                            disabled={copyingLinkFor === `${b.id}-${s.id}`}
+                                            title="Copy this student's secure join link"
+                                            onClick={() =>
+                                              copyStudentJoinLink(b.id, s.id, s.applicant_name)
+                                            }
+                                          >
+                                            {copyingLinkFor === `${b.id}-${s.id}` ? "..." : "Copy Link"}
+                                          </button>
+                                        )}
+                                        {s.already_present ? (
+                                          <span className="badge bg-success">
+                                            <i className="bi bi-check-lg me-1"></i>
+                                            Present
+                                          </span>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-success"
+                                            disabled={batchMarkingId === s.id}
+                                            onClick={() => markBatchPresent(s.id, b.id)}
+                                          >
+                                            {batchMarkingId === s.id ? "..." : "Mark Present"}
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 ))}
