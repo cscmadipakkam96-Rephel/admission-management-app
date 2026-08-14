@@ -1859,7 +1859,7 @@ function TeacherRegister() {
                                       domain={activeOnlineCallByBatch[b.id].jitsi_domain}
                                       roomName={activeOnlineCallByBatch[b.id].room}
                                       jwt={activeOnlineCallByBatch[b.id].jitsi_token}
-                                      configOverwrite={{ prejoinPageEnabled: false }}
+                                      configOverwrite={{ prejoinPageEnabled: true }}
                                       getIFrameRef={(iframeRef) => {
                                         iframeRef.style.height = "100%";
                                         iframeRef.style.width = "100%";

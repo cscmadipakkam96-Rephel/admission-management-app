@@ -26,7 +26,7 @@ function OnlineClassJoin() {
           domain={classInfo.jitsi_domain}
           roomName={classInfo.room}
           jwt={classInfo.jitsi_token}
-          configOverwrite={{ prejoinPageEnabled: false }}
+          configOverwrite={{ prejoinPageEnabled: true }}
           getIFrameRef={(iframeRef) => {
             iframeRef.style.height = "100%";
             iframeRef.style.width = "100%";
