@@ -13,6 +13,7 @@ const Batch = require("../models/Batch");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const BatchStudent = require("../models/BatchStudent");
+const { getRoomSlug, signJitsiToken } = require("../utils/jitsiToken");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
 const { findConflicts } = require("../utils/batchConflicts");
@@ -568,7 +569,7 @@ const markAvailableToday = async (req, res) => {
 
 const startBatch = async (req, res) => {
   try {
-    const { slug, batch_id, topic_covered, class_mode, meeting_link, meeting_provider } = req.body;
+    const { slug, batch_id, topic_covered, class_mode } = req.body;
     if (!batch_id) {
       return res.status(400).json({ success: false, message: "Batch is required." });
     }
@@ -599,13 +600,6 @@ const startBatch = async (req, res) => {
         message: "You don't have permission to host online classes. Ask your admin to enable it.",
       });
     }
-    if (isOnline && (!meeting_link || !meeting_link.trim())) {
-      return res.status(400).json({
-        success: false,
-        message: "Add the meeting link before starting an online class.",
-      });
-    }
-
     const todayStr = new Date().toISOString().slice(0, 10);
     const todayHoliday = await Holiday.findOne({ where: { date: todayStr } });
     if (todayHoliday) {
@@ -620,6 +614,10 @@ const startBatch = async (req, res) => {
       return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
     }
 
+    // Online mode needs nothing typed by the teacher — the room is our own,
+    // self-hosted Jitsi deployment, derived deterministically from
+    // batch+date so every participant (teacher, every student) lands in the
+    // same room without any coordination or pasted link.
     const [session] = await BatchSession.findOrCreate({
       where: { batch_id: batch.id, date: todayStr },
       defaults: {
@@ -627,8 +625,8 @@ const startBatch = async (req, res) => {
         started_at: new Date(),
         topic_covered: topic_covered && topic_covered.trim() ? topic_covered.trim() : null,
         class_mode: isOnline ? "Online" : "Offline",
-        meeting_link: isOnline ? meeting_link.trim() : null,
-        meeting_provider: isOnline ? meeting_provider || "google_meet" : null,
+        meeting_link: isOnline ? getRoomSlug(batch.id, todayStr) : null,
+        meeting_provider: isOnline ? "jitsi" : null,
       },
     });
 
@@ -935,15 +933,77 @@ const joinOnlineClass = async (req, res) => {
     }
 
     const batch = await Batch.findByPk(batch_id, { include: [{ model: Teacher }] });
+    const admission = await Admission.findByPk(admission_id);
+
+    // Minted fresh at the moment of joining, not baked into the longer-lived
+    // app-level link — a short, independent expiry from the 12h app token.
+    const jitsi_token = signJitsiToken({
+      room: session.meeting_link,
+      name: admission?.applicant_name || "Student",
+      isModerator: false,
+    });
 
     res.status(200).json({
       success: true,
       data: {
-        meeting_link: session.meeting_link,
+        jitsi_domain: process.env.JITSI_DOMAIN,
+        room: session.meeting_link,
+        jitsi_token,
         batch_name: batch?.batch_name || null,
         topic_covered: session.topic_covered,
         teacher_name: batch?.Teacher?.teacher_name || null,
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Lets the teacher join their own live Online class from inside the Teacher
+// Portal — same ownership/live-state checks as generateJoinLink, but mints a
+// moderator-flagged Jitsi token instead of an app-level share link.
+const getOnlineClassModeratorToken = async (req, res) => {
+  try {
+    const { slug, batch_id } = req.body;
+    if (!batch_id) {
+      return res.status(400).json({ success: false, message: "Batch is required." });
+    }
+
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true, id: req.teacher.teacherId },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const batch = await Batch.findOne({ where: { id: batch_id, active: true } });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    if (batch.teacher_id !== teacher.id) {
+      return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
+    }
+
+    const session = await BatchSession.findOne({
+      where: { batch_id: batch.id, date: todayStr },
+    });
+    if (!session || session.class_mode !== "Online" || !session.started_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live." });
+    }
+    if (session.ended_at || session.cancelled_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live anymore." });
+    }
+
+    const jitsi_token = signJitsiToken({
+      room: session.meeting_link,
+      name: teacher.teacher_name,
+      isModerator: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { jitsi_domain: process.env.JITSI_DOMAIN, room: session.meeting_link, jitsi_token },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -1543,6 +1603,7 @@ module.exports = {
   cancelOnlineBatch,
   generateJoinLink,
   joinOnlineClass,
+  getOnlineClassModeratorToken,
   login,
   teacherLogout,
   getTeacherMe,

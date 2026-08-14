@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { JitsiMeeting } from "@jitsi/react-sdk";
 import API from "../../api/api";
 
 function OnlineClassJoin() {
@@ -7,6 +8,7 @@ function OnlineClassJoin() {
   const [loading, setLoading] = useState(true);
   const [classInfo, setClassInfo] = useState(null);
   const [error, setError] = useState("");
+  const [joined, setJoined] = useState(false);
 
   useEffect(() => {
     API.get(`/teacher-auth/online-class/join/${token}`)
@@ -17,11 +19,22 @@ function OnlineClassJoin() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const handleJoin = () => {
-    if (classInfo?.meeting_link) {
-      window.location.href = classInfo.meeting_link;
-    }
-  };
+  if (joined && classInfo) {
+    return (
+      <div style={{ height: "100vh", width: "100vw" }}>
+        <JitsiMeeting
+          domain={classInfo.jitsi_domain}
+          roomName={classInfo.room}
+          jwt={classInfo.jitsi_token}
+          configOverwrite={{ prejoinPageEnabled: false }}
+          getIFrameRef={(iframeRef) => {
+            iframeRef.style.height = "100%";
+            iframeRef.style.width = "100%";
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -62,9 +75,9 @@ function OnlineClassJoin() {
               <button
                 type="button"
                 className="btn btn-primary w-100 mt-4"
-                onClick={handleJoin}
+                onClick={() => setJoined(true)}
               >
-                <i className="bi bi-box-arrow-up-right me-1"></i>
+                <i className="bi bi-camera-video me-1"></i>
                 Join Class
               </button>
             </div>

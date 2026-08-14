@@ -19,6 +19,7 @@ const {
   cancelOnlineBatch,
   generateJoinLink,
   joinOnlineClass,
+  getOnlineClassModeratorToken,
   login,
   teacherLogout,
   getTeacherMe,
@@ -63,6 +64,7 @@ router.post("/restart-batch", requireTeacherAuth, restartBatch);
 // (checked inside startBatch/cancelOnlineBatch).
 router.post("/cancel-online-batch", requireTeacherAuth, cancelOnlineBatch);
 router.post("/online-class/generate-link", requireTeacherAuth, generateJoinLink);
+router.post("/online-class/moderator-token", requireTeacherAuth, getOnlineClassModeratorToken);
 
 // Teacher self-service batch creation — gated per-teacher by
 // Teacher.can_create_batches (checked inside createOwnBatch).

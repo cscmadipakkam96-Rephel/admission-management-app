@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
+import { JitsiMeeting } from "@jitsi/react-sdk";
 import API from "../../api/api";
 import {
   parseTimingRange,
@@ -174,9 +175,11 @@ function TeacherRegister() {
   // Online Class — only relevant when dashboard.teacher.can_host_online_classes
   // is true (admin-granted), same gating pattern as own-batch creation above.
   const [onlineModeByBatch, setOnlineModeByBatch] = useState({});
-  const [onlineLinkInputs, setOnlineLinkInputs] = useState({});
-  const [onlineProviderInputs, setOnlineProviderInputs] = useState({});
   const [batchCancellingId, setBatchCancellingId] = useState(null);
+  // Which batch's Jitsi call is currently rendered in-page for the teacher
+  // (moderator) — set once /online-class/moderator-token resolves.
+  const [activeOnlineCallByBatch, setActiveOnlineCallByBatch] = useState({});
+  const [joiningCallId, setJoiningCallId] = useState(null);
   const [copyingLinkFor, setCopyingLinkFor] = useState(null);
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
@@ -386,12 +389,8 @@ function TeacherRegister() {
     }
   };
 
-  const startBatch = async (batchId, topic, mode, meetingLink, provider) => {
+  const startBatch = async (batchId, topic, mode) => {
     const isOnline = mode === "Online";
-    if (isOnline && !(meetingLink || "").trim()) {
-      setToast({ variant: "danger", message: "Add the meeting link before starting an online class." });
-      return;
-    }
     setBatchStartingId(batchId);
     try {
       const response = await API.post("/teacher-auth/start-batch", {
@@ -399,8 +398,6 @@ function TeacherRegister() {
         batch_id: batchId,
         topic_covered: topic || undefined,
         class_mode: isOnline ? "Online" : "Offline",
-        meeting_link: isOnline ? meetingLink.trim() : undefined,
-        meeting_provider: isOnline ? provider || "google_meet" : undefined,
       });
       setDashboard((prev) => ({
         ...prev,
@@ -411,8 +408,6 @@ function TeacherRegister() {
                 started_at: response.data.data.started_at,
                 topic_covered: response.data.data.topic_covered,
                 class_mode: response.data.data.class_mode,
-                meeting_link: isOnline ? meetingLink.trim() : null,
-                meeting_provider: isOnline ? provider || "google_meet" : null,
                 cancelled_at: null,
               }
             : b
@@ -420,11 +415,6 @@ function TeacherRegister() {
       }));
       setBatchTopicPickerId(null);
       setOnlineModeByBatch((prev) => ({ ...prev, [batchId]: "Offline" }));
-      setOnlineLinkInputs((prev) => {
-        const next = { ...prev };
-        delete next[batchId];
-        return next;
-      });
       setToast({ variant: "success", message: isOnline ? "Online class started" : "Class started" });
     } catch (err) {
       setToast({
@@ -550,6 +540,11 @@ function TeacherRegister() {
         ),
       }));
       setExpandedBatchId((prev) => (prev === batchId ? null : prev));
+      setActiveOnlineCallByBatch((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
       setToast({ variant: "success", message: "Class restarted." });
     } catch (err) {
       setToast({
@@ -589,6 +584,11 @@ function TeacherRegister() {
             : b
         ),
       }));
+      setActiveOnlineCallByBatch((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
       setToast({ variant: "success", message: "Online class cancelled." });
     } catch (err) {
       setToast({
@@ -597,6 +597,26 @@ function TeacherRegister() {
       });
     } finally {
       setBatchCancellingId(null);
+    }
+  };
+
+  // Lets the teacher enter their own live Online class from inside this
+  // page — mints a fresh moderator token, then renders the embedded call.
+  const joinOnlineClassAsTeacher = async (batchId) => {
+    setJoiningCallId(batchId);
+    try {
+      const response = await API.post("/teacher-auth/online-class/moderator-token", {
+        slug,
+        batch_id: batchId,
+      });
+      setActiveOnlineCallByBatch((prev) => ({ ...prev, [batchId]: response.data.data }));
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.response?.data?.message || "Couldn't join the class.",
+      });
+    } finally {
+      setJoiningCallId(null);
     }
   };
 
@@ -1808,6 +1828,17 @@ function TeacherRegister() {
                                         >
                                           {batchEndingId === b.id ? "Ending..." : "End Class"}
                                         </button>
+                                        {b.class_mode === "Online" && !activeOnlineCallByBatch[b.id] && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-primary"
+                                            disabled={joiningCallId === b.id}
+                                            onClick={() => joinOnlineClassAsTeacher(b.id)}
+                                          >
+                                            <i className="bi bi-camera-video me-1"></i>
+                                            {joiningCallId === b.id ? "Joining..." : "Join Class"}
+                                          </button>
+                                        )}
                                         {b.class_mode === "Online" && (
                                           <button
                                             type="button"
@@ -1822,6 +1853,20 @@ function TeacherRegister() {
                                       </>
                                     );
                                   })()}
+                                {activeOnlineCallByBatch[b.id] && (
+                                  <div className="w-100 mt-2" style={{ height: "480px" }}>
+                                    <JitsiMeeting
+                                      domain={activeOnlineCallByBatch[b.id].jitsi_domain}
+                                      roomName={activeOnlineCallByBatch[b.id].room}
+                                      jwt={activeOnlineCallByBatch[b.id].jitsi_token}
+                                      configOverwrite={{ prejoinPageEnabled: false }}
+                                      getIFrameRef={(iframeRef) => {
+                                        iframeRef.style.height = "100%";
+                                        iframeRef.style.width = "100%";
+                                      }}
+                                    />
+                                  </div>
+                                )}
                                 {b.started_at && !b.ended_at && (
                                   <button
                                     type="button"
@@ -1869,35 +1914,9 @@ function TeacherRegister() {
                                       </button>
                                     </div>
                                     {onlineModeByBatch[b.id] === "Online" && (
-                                      <div className="d-flex gap-2 flex-wrap align-items-start mb-2">
-                                        <input
-                                          type="text"
-                                          className="form-control form-control-sm"
-                                          style={{ maxWidth: "320px" }}
-                                          placeholder="Meeting link (e.g. Google Meet) — required"
-                                          value={onlineLinkInputs[b.id] || ""}
-                                          onChange={(e) =>
-                                            setOnlineLinkInputs((prev) => ({
-                                              ...prev,
-                                              [b.id]: e.target.value,
-                                            }))
-                                          }
-                                        />
-                                        <select
-                                          className="form-select form-select-sm"
-                                          style={{ maxWidth: "160px" }}
-                                          value={onlineProviderInputs[b.id] || "google_meet"}
-                                          onChange={(e) =>
-                                            setOnlineProviderInputs((prev) => ({
-                                              ...prev,
-                                              [b.id]: e.target.value,
-                                            }))
-                                          }
-                                        >
-                                          <option value="google_meet">Google Meet</option>
-                                          <option value="jitsi">Jitsi</option>
-                                          <option value="zoom">Zoom</option>
-                                        </select>
+                                      <div className="small text-muted mb-2">
+                                        <i className="bi bi-shield-check me-1"></i>
+                                        A secure class room is created automatically — no meeting link to set up.
                                       </div>
                                     )}
                                   </div>
@@ -1920,20 +1939,8 @@ function TeacherRegister() {
                                               key={topic}
                                               type="button"
                                               className="btn btn-sm btn-outline-primary"
-                                              disabled={
-                                                batchStartingId === b.id ||
-                                                (onlineModeByBatch[b.id] === "Online" &&
-                                                  !(onlineLinkInputs[b.id] || "").trim())
-                                              }
-                                              onClick={() =>
-                                                startBatch(
-                                                  b.id,
-                                                  topic,
-                                                  onlineModeByBatch[b.id],
-                                                  onlineLinkInputs[b.id],
-                                                  onlineProviderInputs[b.id]
-                                                )
-                                              }
+                                              disabled={batchStartingId === b.id}
+                                              onClick={() => startBatch(b.id, topic, onlineModeByBatch[b.id])}
                                             >
                                               {topic}
                                             </button>
@@ -1962,20 +1969,11 @@ function TeacherRegister() {
                                         type="button"
                                         className="btn btn-sm btn-success"
                                         disabled={
-                                          batchStartingId === b.id ||
-                                          !(batchTopicInputs[b.id] || "").trim() ||
-                                          (onlineModeByBatch[b.id] === "Online" &&
-                                            !(onlineLinkInputs[b.id] || "").trim())
+                                          batchStartingId === b.id || !(batchTopicInputs[b.id] || "").trim()
                                         }
                                         onClick={() => {
                                           const topic = (batchTopicInputs[b.id] || "").trim();
-                                          startBatch(
-                                            b.id,
-                                            topic,
-                                            onlineModeByBatch[b.id],
-                                            onlineLinkInputs[b.id],
-                                            onlineProviderInputs[b.id]
-                                          );
+                                          startBatch(b.id, topic, onlineModeByBatch[b.id]);
                                           setBatchTopicInputs((prev) => {
                                             const next = { ...prev };
                                             delete next[b.id];
