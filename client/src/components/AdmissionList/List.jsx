@@ -11,6 +11,15 @@ import AdmissionCharts from "../AdmissionCharts/AdmissionCharts";
 import AdmissionReportCard from "../AdmissionReportCard/AdmissionReportCard";
 import "./List.css";
 
+// Mirrors AdmissionReportCard's own date-fallback logic exactly, so the
+// table agrees with the stat cards on which records fall inside the
+// selected period instead of using a different (created_at-only) rule.
+const effectiveAdmissionDate = (a) => {
+  if (a.admission_date) return a.admission_date;
+  if (a.created_at) return a.created_at.slice(0, 10);
+  return null;
+};
+
 const EXPORT_COLUMNS = [
   { key: "comn_enrol_no", label: "Enrol No" },
   { key: "common_enrol_no", label: "Common Enrol No" },
@@ -157,7 +166,7 @@ function List() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sortField, sortOrder, chartFilter]);
+  }, [searchTerm, sortField, sortOrder, chartFilter, chartRange]);
 
   const deleteAdmission = async (id) => {
     if (
@@ -179,6 +188,12 @@ function List() {
 
   const filteredAdmissions = admissions.filter((row) => {
     if (chartFilter && !chartFilter.ids.has(row.id)) return false;
+    if (chartRange.startDate && chartRange.endDate) {
+      const rowDate = effectiveAdmissionDate(row);
+      if (!rowDate || rowDate < chartRange.startDate || rowDate > chartRange.endDate) {
+        return false;
+      }
+    }
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
 
