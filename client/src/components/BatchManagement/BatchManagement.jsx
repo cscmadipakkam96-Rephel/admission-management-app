@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
 import SubjectCompletionChart from "../SubjectCompletionChart/SubjectCompletionChart";
+import RecordingsModal from "./RecordingsModal";
 import { matchTimingStatus, TIMING_STATUS_TABS } from "../../utils/timingMatch";
 
 // A batch's Subject can itself be a sub-subject (has a Parent) — show both
@@ -245,6 +246,12 @@ function GroupManagement() {
   // --- Concept 2: Section-based Batch scheduling ---
   const batchModalRef = useRef(null);
   const batchDeleteModalRef = useRef(null);
+  const [recordingsBatch, setRecordingsBatch] = useState(null);
+
+  const openRecordingsModal = (batch) => {
+    setRecordingsBatch(batch);
+    Modal.getOrCreateInstance(document.getElementById("recordingsModal")).show();
+  };
   const [batches, setBatches] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [batchEditingId, setBatchEditingId] = useState(null);
@@ -1117,6 +1124,14 @@ function GroupManagement() {
                             <div className="d-flex gap-1 mt-1">
                               <button
                                 type="button"
+                                className="btn btn-sm btn-outline-secondary"
+                                title="Recordings"
+                                onClick={() => openRecordingsModal(b)}
+                              >
+                                <i className="bi bi-camera-video"></i>
+                              </button>
+                              <button
+                                type="button"
                                 className="btn btn-sm btn-outline-primary"
                                 onClick={() => openEditBatchModal(b)}
                               >
@@ -1586,6 +1601,14 @@ function GroupManagement() {
                           </span>
                         </td>
                         <td className="d-flex gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary"
+                            title="Recordings"
+                            onClick={() => openRecordingsModal(b)}
+                          >
+                            <i className="bi bi-camera-video"></i>
+                          </button>
                           <button
                             type="button"
                             className="btn btn-sm btn-outline-primary"
@@ -2296,6 +2319,8 @@ function GroupManagement() {
           </div>
         </div>
       </div>
+
+      <RecordingsModal batch={recordingsBatch} />
 
       <div className="modal fade" tabIndex="-1" ref={calendarDetailModalRef}>
         <div className="modal-dialog modal-dialog-scrollable">

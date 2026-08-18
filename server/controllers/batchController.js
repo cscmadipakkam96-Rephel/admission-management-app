@@ -8,6 +8,8 @@ const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
 const FeePayment = require("../models/FeePayment");
+const ClassRecording = require("../models/ClassRecording");
+const { getPlaybackUrl } = require("../utils/s3");
 const {
   VALID_SECTIONS,
   SECTION_LABELS,
@@ -851,6 +853,59 @@ const getStudentTracking = async (req, res) => {
   }
 };
 
+// Admin-side counterpart to Online Class recordings — scoped by admin_id
+// rather than teacher_id, so an admin can see recordings across every
+// teacher's batches, not just their own.
+const getBatchRecordingsAdmin = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const batch = await Batch.findOne({
+      where: { id: batchId, admin_id: req.admin.adminId, active: true },
+    });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    const recordings = await ClassRecording.findAll({
+      where: { batch_id: batch.id, is_deleted: false },
+      order: [["created_at", "DESC"]],
+    });
+    res.status(200).json({
+      success: true,
+      data: recordings.map((r) => ({
+        id: r.id,
+        session_date: r.session_date,
+        duration_seconds: r.duration_seconds,
+        file_size_mb: r.file_size_mb,
+        created_at: r.created_at,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getRecordingPlaybackUrlAdmin = async (req, res) => {
+  try {
+    const { recordingId } = req.params;
+    const recording = await ClassRecording.findOne({
+      where: { id: recordingId, is_deleted: false },
+    });
+    if (!recording) {
+      return res.status(404).json({ success: false, message: "Recording not found." });
+    }
+    const batch = await Batch.findOne({
+      where: { id: recording.batch_id, admin_id: req.admin.adminId },
+    });
+    if (!batch) {
+      return res.status(403).json({ success: false, message: "This recording doesn't belong to you." });
+    }
+    const playback_url = await getPlaybackUrl({ key: recording.s3_key });
+    res.status(200).json({ success: true, data: { playback_url } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   coursesForSubject,
   includeOptionsFor,
@@ -865,5 +920,7 @@ module.exports = {
   deleteBatch,
   getTeacherBatchProgress,
   getSubjectCompletionChart,
+  getBatchRecordingsAdmin,
+  getRecordingPlaybackUrlAdmin,
   getStudentTracking,
 };

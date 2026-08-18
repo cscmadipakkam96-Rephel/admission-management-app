@@ -13,7 +13,9 @@ const Batch = require("../models/Batch");
 const BatchSession = require("../models/BatchSession");
 const BatchSubstitution = require("../models/BatchSubstitution");
 const BatchStudent = require("../models/BatchStudent");
+const ClassRecording = require("../models/ClassRecording");
 const { getRoomSlug, signJitsiToken } = require("../utils/jitsiToken");
+const { getUploadUrl, getPlaybackUrl } = require("../utils/s3");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
 const { findConflicts } = require("../utils/batchConflicts");
@@ -1010,6 +1012,154 @@ const getOnlineClassModeratorToken = async (req, res) => {
   }
 };
 
+// Presigned PUT URL for the browser to upload a finished recording Blob
+// directly to S3 — the file never transits this server. Same ownership +
+// live-Online checks as the other Online Class actions.
+const getRecordingUploadUrl = async (req, res) => {
+  try {
+    const { slug, batch_id } = req.body;
+    if (!batch_id) {
+      return res.status(400).json({ success: false, message: "Batch is required." });
+    }
+
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true, id: req.teacher.teacherId },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const batch = await Batch.findOne({ where: { id: batch_id, active: true } });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    if (batch.teacher_id !== teacher.id) {
+      return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
+    }
+
+    const session = await BatchSession.findOne({
+      where: { batch_id: batch.id, date: todayStr },
+    });
+    if (!session || session.class_mode !== "Online" || !session.started_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live." });
+    }
+    if (session.ended_at || session.cancelled_at) {
+      return res.status(400).json({ success: false, message: "This online class isn't live anymore." });
+    }
+
+    const s3_key = `recordings/${batch.admin_id}/${batch.id}/${todayStr}-${Date.now()}.webm`;
+    const upload_url = await getUploadUrl({ key: s3_key, contentType: "video/webm" });
+
+    res.status(200).json({ success: true, data: { upload_url, s3_key } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Writes the ClassRecording metadata row once the browser's direct-to-S3
+// PUT has actually succeeded — this is the only place a row is created, so
+// an aborted/failed upload never leaves a row pointing at a nonexistent
+// S3 object.
+const completeRecordingUpload = async (req, res) => {
+  try {
+    const { slug, batch_id, s3_key, duration_seconds, file_size_mb } = req.body;
+    if (!batch_id || !s3_key) {
+      return res.status(400).json({ success: false, message: "Batch and recording key are required." });
+    }
+
+    const teacher = await Teacher.findOne({
+      where: { slug, active: true, id: req.teacher.teacherId },
+    });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: "Teacher not found or not verified" });
+    }
+
+    const batch = await Batch.findOne({ where: { id: batch_id, active: true } });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    if (batch.teacher_id !== teacher.id) {
+      return res.status(403).json({ success: false, message: "This batch is not assigned to you" });
+    }
+    // The key must be one this same batch was actually issued an upload
+    // URL for — guards against a metadata row pointing at an arbitrary key.
+    if (!s3_key.startsWith(`recordings/${batch.admin_id}/${batch.id}/`)) {
+      return res.status(400).json({ success: false, message: "Invalid recording key for this batch." });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const recording = await ClassRecording.create({
+      admin_id: batch.admin_id,
+      batch_id: batch.id,
+      session_date: todayStr,
+      teacher_id: teacher.id,
+      s3_key,
+      duration_seconds: duration_seconds || null,
+      file_size_mb: file_size_mb || null,
+      uploaded_by: "Teacher",
+    });
+
+    res.status(201).json({ success: true, data: { id: recording.id } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Recordings for one batch, most recent first — teacher can only list
+// recordings for a batch actually assigned to them.
+const getBatchRecordings = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const batch = await Batch.findOne({
+      where: { id: batchId, teacher_id: req.teacher.teacherId, active: true },
+    });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch not found" });
+    }
+    const recordings = await ClassRecording.findAll({
+      where: { batch_id: batch.id, is_deleted: false },
+      order: [["created_at", "DESC"]],
+    });
+    res.status(200).json({
+      success: true,
+      data: recordings.map((r) => ({
+        id: r.id,
+        session_date: r.session_date,
+        duration_seconds: r.duration_seconds,
+        file_size_mb: r.file_size_mb,
+        created_at: r.created_at,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Fresh presigned GET URL for one recording — never a stored/permanent
+// link, matching the bucket's own Block Public Access setting.
+const getRecordingPlaybackUrl = async (req, res) => {
+  try {
+    const { recordingId } = req.params;
+    const recording = await ClassRecording.findOne({
+      where: { id: recordingId, is_deleted: false },
+    });
+    if (!recording) {
+      return res.status(404).json({ success: false, message: "Recording not found." });
+    }
+    const batch = await Batch.findOne({
+      where: { id: recording.batch_id, teacher_id: req.teacher.teacherId },
+    });
+    if (!batch) {
+      return res.status(403).json({ success: false, message: "This recording doesn't belong to you." });
+    }
+    const playback_url = await getPlaybackUrl({ key: recording.s3_key });
+    res.status(200).json({ success: true, data: { playback_url } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Topics already covered in this batch — shown as suggestions when
 // starting class, so the teacher can pick a repeat instead of retyping it.
 const getBatchTopicSuggestions = async (req, res) => {
@@ -1604,6 +1754,10 @@ module.exports = {
   generateJoinLink,
   joinOnlineClass,
   getOnlineClassModeratorToken,
+  getRecordingUploadUrl,
+  completeRecordingUpload,
+  getBatchRecordings,
+  getRecordingPlaybackUrl,
   login,
   teacherLogout,
   getTeacherMe,

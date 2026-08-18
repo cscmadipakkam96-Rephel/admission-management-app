@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { JitsiMeeting } from "@jitsi/react-sdk";
 import API from "../../api/api";
+import { createCallRecorder } from "../../utils/callRecorder";
 import {
   parseTimingRange,
   matchTimingStatus,
@@ -180,6 +181,11 @@ function TeacherRegister() {
   // (moderator) — set once /online-class/moderator-token resolves.
   const [activeOnlineCallByBatch, setActiveOnlineCallByBatch] = useState({});
   const [joiningCallId, setJoiningCallId] = useState(null);
+  // Recorder instances are mutable objects with methods, not serializable
+  // data — kept in a ref, keyed by batch id. recordingStatusByBatch (state)
+  // drives what the UI actually renders ("recording" | "uploading").
+  const recordersRef = useRef({});
+  const [recordingStatusByBatch, setRecordingStatusByBatch] = useState({});
   const [copyingLinkFor, setCopyingLinkFor] = useState(null);
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
@@ -473,6 +479,11 @@ function TeacherRegister() {
       });
       return;
     }
+    // A teacher who forgets to hit "Stop Recording" still gets a saved
+    // recording — this doesn't block ending class on the upload finishing.
+    if (recordingStatusByBatch[batchId] === "recording") {
+      stopRecordingForBatch(batchId);
+    }
     setBatchEndingId(batchId);
     try {
       const response = await API.post("/teacher-auth/end-batch", {
@@ -618,6 +629,74 @@ function TeacherRegister() {
     } finally {
       setJoiningCallId(null);
     }
+  };
+
+  const startRecordingForBatch = async (batchId) => {
+    try {
+      const recorder = createCallRecorder();
+      await recorder.start();
+      recordersRef.current[batchId] = recorder;
+      setRecordingStatusByBatch((prev) => ({ ...prev, [batchId]: "recording" }));
+    } catch (err) {
+      setToast({
+        variant: "danger",
+        message: err.message || "Couldn't start recording — check screen-share permission.",
+      });
+    }
+  };
+
+  // Runs in the background — never awaited by the caller, so a slow S3
+  // upload can't block the teacher from ending class.
+  const uploadRecording = async (batchId, blob, durationSeconds) => {
+    try {
+      const presignRes = await API.post("/teacher-auth/online-class/recording/upload-url", {
+        slug,
+        batch_id: batchId,
+      });
+      const { upload_url, s3_key } = presignRes.data.data;
+      await fetch(upload_url, {
+        method: "PUT",
+        body: blob,
+        headers: { "Content-Type": "video/webm" },
+      });
+      await API.post("/teacher-auth/online-class/recording/complete", {
+        slug,
+        batch_id: batchId,
+        s3_key,
+        duration_seconds: durationSeconds,
+        file_size_mb: blob.size / (1024 * 1024),
+      });
+      setToast({ variant: "success", message: "Recording saved." });
+    } catch {
+      setToast({
+        variant: "danger",
+        message: "Recording upload failed — the class itself is unaffected.",
+      });
+    } finally {
+      setRecordingStatusByBatch((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
+    }
+  };
+
+  const stopRecordingForBatch = (batchId) => {
+    const recorder = recordersRef.current[batchId];
+    if (!recorder) return;
+    delete recordersRef.current[batchId];
+    setRecordingStatusByBatch((prev) => ({ ...prev, [batchId]: "uploading" }));
+    recorder
+      .stop()
+      .then(({ blob, durationSeconds }) => uploadRecording(batchId, blob, durationSeconds))
+      .catch(() => {
+        setToast({ variant: "danger", message: "Couldn't finish recording." });
+        setRecordingStatusByBatch((prev) => {
+          const next = { ...prev };
+          delete next[batchId];
+          return next;
+        });
+      });
   };
 
   // Generates one student's join link on demand and copies it — never
@@ -1849,6 +1928,36 @@ function TeacherRegister() {
                                           >
                                             {batchCancellingId === b.id ? "Cancelling..." : "Cancel Online Class"}
                                           </button>
+                                        )}
+                                        {activeOnlineCallByBatch[b.id] &&
+                                          !recordingStatusByBatch[b.id] && (
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-outline-danger"
+                                              onClick={() => startRecordingForBatch(b.id)}
+                                            >
+                                              <i className="bi bi-record-circle me-1"></i>
+                                              Start Recording
+                                            </button>
+                                          )}
+                                        {recordingStatusByBatch[b.id] === "recording" && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-danger"
+                                            onClick={() => stopRecordingForBatch(b.id)}
+                                          >
+                                            <i className="bi bi-stop-circle me-1"></i>
+                                            Stop Recording
+                                          </button>
+                                        )}
+                                        {recordingStatusByBatch[b.id] === "uploading" && (
+                                          <span className="badge bg-secondary">
+                                            <span
+                                              className="spinner-border spinner-border-sm me-1"
+                                              role="status"
+                                            ></span>
+                                            Saving recording...
+                                          </span>
                                         )}
                                       </>
                                     );

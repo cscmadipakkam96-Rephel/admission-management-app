@@ -20,6 +20,10 @@ const {
   generateJoinLink,
   joinOnlineClass,
   getOnlineClassModeratorToken,
+  getRecordingUploadUrl,
+  completeRecordingUpload,
+  getBatchRecordings,
+  getRecordingPlaybackUrl,
   login,
   teacherLogout,
   getTeacherMe,
@@ -65,6 +69,13 @@ router.post("/restart-batch", requireTeacherAuth, restartBatch);
 router.post("/cancel-online-batch", requireTeacherAuth, cancelOnlineBatch);
 router.post("/online-class/generate-link", requireTeacherAuth, generateJoinLink);
 router.post("/online-class/moderator-token", requireTeacherAuth, getOnlineClassModeratorToken);
+
+// Recording — same can_host_online_classes gate implicitly (only reachable
+// while a live Online session exists, which already requires it).
+router.post("/online-class/recording/upload-url", requireTeacherAuth, getRecordingUploadUrl);
+router.post("/online-class/recording/complete", requireTeacherAuth, completeRecordingUpload);
+router.get("/online-class/recordings/:batchId", requireTeacherAuth, getBatchRecordings);
+router.get("/online-class/recording/:recordingId/playback-url", requireTeacherAuth, getRecordingPlaybackUrl);
 
 // Teacher self-service batch creation — gated per-teacher by
 // Teacher.can_create_batches (checked inside createOwnBatch).

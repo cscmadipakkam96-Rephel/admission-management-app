@@ -1,6 +1,5 @@
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
-// deploy-trigger check
 
 const express = require("express");
 const cors = require("cors");
@@ -29,6 +28,7 @@ const BatchStudent = require("./models/BatchStudent");
 const BatchSession = require("./models/BatchSession");
 const BatchSubstitution = require("./models/BatchSubstitution");
 const FollowUp = require("./models/FollowUp");
+const ClassRecording = require("./models/ClassRecording");
 
 const Admin = require("./models/Admin");
 
