@@ -558,7 +558,6 @@ function TeacherManagement() {
                   <th>Mobile No</th>
                   <th>Email</th>
                   <th>Qualification</th>
-                  <th>Courses</th>
                   <th
                     role="button"
                     onClick={() => handleSort("joining_date")}
@@ -579,7 +578,7 @@ function TeacherManagement() {
               <tbody>
                 {sortedTeachers.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted py-4" colSpan={12}>
+                    <td className="text-center text-muted py-4" colSpan={11}>
                       <i className="bi bi-inbox fs-3 d-block mb-2"></i>
                       No teachers found.
                     </td>
@@ -592,18 +591,6 @@ function TeacherManagement() {
                       <td>{t.mobile_no || "-"}</td>
                       <td>{t.email || "-"}</td>
                       <td>{t.qualification || "-"}</td>
-                      <td>
-                        {(t.Courses || []).length === 0
-                          ? "-"
-                          : t.Courses.map((c) => (
-                              <span
-                                key={c.id}
-                                className="badge bg-info text-dark me-1"
-                              >
-                                {c.course_name}
-                              </span>
-                            ))}
-                      </td>
                       <td>{t.joining_date || "-"}</td>
                       <td>{t.salary || "-"}</td>
                       <td>
