@@ -497,8 +497,17 @@ function TeacherRegister() {
     }
     // A teacher who forgets to hit "Stop Recording" still gets a saved
     // recording — this doesn't block ending class on the upload finishing.
+    // The presign is reserved now, before end-batch closes the session,
+    // since the live-session check on the presign endpoint would otherwise
+    // reject a request that arrives after the session is already ended.
     if (recordingStatusByBatch[batchId] === "recording") {
-      stopRecordingForBatch(batchId);
+      let recordingPresign = null;
+      try {
+        recordingPresign = await reserveRecordingUpload(batchId);
+      } catch {
+        // stopRecordingForBatch will surface the upload failure
+      }
+      stopRecordingForBatch(batchId, recordingPresign);
     }
     setBatchEndingId(batchId);
     try {
@@ -547,9 +556,16 @@ function TeacherRegister() {
     }
     // Restart wipes the session, but a recording already in progress is
     // still real captured content — stop and save it rather than silently
-    // leaving it running with nothing to ever collect it.
+    // leaving it running with nothing to ever collect it. The presign is
+    // reserved before restart-batch resets the session (same race as end).
     if (recordingStatusByBatch[batchId] === "recording") {
-      stopRecordingForBatch(batchId);
+      let recordingPresign = null;
+      try {
+        recordingPresign = await reserveRecordingUpload(batchId);
+      } catch {
+        // stopRecordingForBatch will surface the upload failure
+      }
+      stopRecordingForBatch(batchId, recordingPresign);
     }
     setBatchRestartingId(batchId);
     try {
@@ -603,7 +619,13 @@ function TeacherRegister() {
       return;
     }
     if (recordingStatusByBatch[batchId] === "recording") {
-      stopRecordingForBatch(batchId);
+      let recordingPresign = null;
+      try {
+        recordingPresign = await reserveRecordingUpload(batchId);
+      } catch {
+        // stopRecordingForBatch will surface the upload failure
+      }
+      stopRecordingForBatch(batchId, recordingPresign);
     }
     setBatchCancellingId(batchId);
     try {
@@ -670,15 +692,24 @@ function TeacherRegister() {
     }
   };
 
+  // Reserved while the session is still "live" server-side — must happen
+  // before end/restart/cancel changes session state, or the presign
+  // endpoint's live-session check rejects it (the recorder can still be
+  // flushing its final chunk well after the session-ending API returns).
+  const reserveRecordingUpload = async (batchId) => {
+    const presignRes = await API.post("/teacher-auth/online-class/recording/upload-url", {
+      slug,
+      batch_id: batchId,
+    });
+    return presignRes.data.data;
+  };
+
   // Runs in the background — never awaited by the caller, so a slow S3
-  // upload can't block the teacher from ending class.
-  const uploadRecording = async (batchId, blob, durationSeconds) => {
+  // upload can't block the teacher from ending class. `presign`, when
+  // provided, is one already reserved before the session was closed.
+  const uploadRecording = async (batchId, blob, durationSeconds, presign) => {
     try {
-      const presignRes = await API.post("/teacher-auth/online-class/recording/upload-url", {
-        slug,
-        batch_id: batchId,
-      });
-      const { upload_url, s3_key } = presignRes.data.data;
+      const { upload_url, s3_key } = presign || (await reserveRecordingUpload(batchId));
       await fetch(upload_url, {
         method: "PUT",
         body: blob,
@@ -706,14 +737,14 @@ function TeacherRegister() {
     }
   };
 
-  const stopRecordingForBatch = (batchId) => {
+  const stopRecordingForBatch = (batchId, presign) => {
     const recorder = recordersRef.current[batchId];
     if (!recorder) return;
     delete recordersRef.current[batchId];
     setRecordingStatusByBatch((prev) => ({ ...prev, [batchId]: "uploading" }));
     recorder
       .stop()
-      .then(({ blob, durationSeconds }) => uploadRecording(batchId, blob, durationSeconds))
+      .then(({ blob, durationSeconds }) => uploadRecording(batchId, blob, durationSeconds, presign))
       .catch(() => {
         setToast({ variant: "danger", message: "Couldn't finish recording." });
         setRecordingStatusByBatch((prev) => {
