@@ -78,6 +78,7 @@ function AdminLogin() {
               {submitting ? "Logging in..." : "Login"}
             </button>
           </form>
+          {/* Google sign-in — commented out, not deleted; re-enable if needed later.
           <div className="d-flex align-items-center gap-2 my-3">
             <hr className="flex-grow-1" />
             <span className="text-muted small">OR</span>
@@ -95,6 +96,7 @@ function AdminLogin() {
             />
             Sign in with Google
           </a>
+          */}
           <p className="text-center text-muted small mt-3 mb-0">
             Don't have an account?{" "}
             <Link to="/register">Register as Admin</Link>

@@ -1761,6 +1761,7 @@ function TeacherRegister() {
         ) : (
           dashboard && (
             <>
+              {/* My QR Code — commented out, not deleted; re-enable if needed later.
               <div className="card shadow-sm mb-4">
                 <div className="card-body text-center">
                   <h5 className="mb-3">My QR Code</h5>
@@ -1772,6 +1773,7 @@ function TeacherRegister() {
                   </div>
                 </div>
               </div>
+              */}
 
               {dashboard.holiday && (
                 <div className="alert alert-warning mb-4">
@@ -2312,6 +2314,7 @@ function TeacherRegister() {
                 </div>
               )}
 
+              {/* My Weekly Batch Schedule — commented out, not deleted; re-enable if needed later.
               <div className="card shadow-sm mb-4">
                 <div className="card-body">
                   <h5 className="mb-3">
@@ -2371,6 +2374,7 @@ function TeacherRegister() {
                   )}
                 </div>
               </div>
+              */}
 
               <div className="card shadow-sm mb-4">
                 <div className="card-body">
