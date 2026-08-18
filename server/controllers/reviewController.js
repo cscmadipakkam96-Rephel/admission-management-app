@@ -2,7 +2,9 @@ const Course = require("../models/Course");
 const Teacher = require("../models/Teacher");
 const REVIEW_KEYWORDS = require("../config/reviewKeywords");
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// llama-3.3-70b-versatile was removed from Groq's production tier; their
+// current general-purpose production models are the openai/gpt-oss family.
+const GROQ_MODEL = "openai/gpt-oss-120b";
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
 const RATING_LABELS = {
@@ -106,6 +108,10 @@ const generateReview = async (req, res) => {
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 300,
+        // gpt-oss is a reasoning model — without this it can spend most of
+        // max_tokens "thinking" and leave little/nothing for the actual
+        // review text. This task doesn't need deep reasoning.
+        reasoning_effort: "low",
       }),
     });
 
