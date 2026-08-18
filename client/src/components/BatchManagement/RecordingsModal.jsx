@@ -57,6 +57,23 @@ function RecordingsModal({ batch }) {
     return `${mins}m ${secs}s`;
   };
 
+  // What actually stopped the recording — tells a properly finished class
+  // apart from one left over from a mid-class Restart/Cancel.
+  const statusBadge = (stoppedReason) => {
+    switch (stoppedReason) {
+      case "ended":
+        return <span className="badge bg-success">Completed</span>;
+      case "restarted":
+        return <span className="badge bg-warning text-dark">Restarted</span>;
+      case "cancelled":
+        return <span className="badge bg-danger">Cancelled</span>;
+      case "manual":
+        return <span className="badge bg-secondary">Stopped manually</span>;
+      default:
+        return <span className="badge bg-light text-dark">Unknown</span>;
+    }
+  };
+
   return (
     <div className="modal fade" id="recordingsModal" tabIndex="-1">
       <div className="modal-dialog modal-lg">
@@ -80,6 +97,7 @@ function RecordingsModal({ batch }) {
                   <thead>
                     <tr>
                       <th>Date</th>
+                      <th>Status</th>
                       <th>Duration</th>
                       <th>Size</th>
                       <th></th>
@@ -89,6 +107,7 @@ function RecordingsModal({ batch }) {
                     {recordings.map((r) => (
                       <tr key={r.id}>
                         <td>{r.session_date}</td>
+                        <td>{statusBadge(r.stopped_reason)}</td>
                         <td>{formatDuration(r.duration_seconds)}</td>
                         <td>{r.file_size_mb ? `${r.file_size_mb.toFixed(1)} MB` : "—"}</td>
                         <td className="text-end">

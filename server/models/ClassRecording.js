@@ -53,6 +53,14 @@ const ClassRecording = sequelize.define(
       allowNull: false,
       defaultValue: "Teacher",
     },
+    // What actually stopped the recording — lets an admin tell a recording
+    // from a properly finished, attendance-marked class apart from one that
+    // only exists because the teacher hit Restart/Cancel mid-class.
+    // One of: "ended", "restarted", "cancelled", "manual".
+    stopped_reason: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     is_deleted: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

@@ -507,7 +507,7 @@ function TeacherRegister() {
       } catch {
         // stopRecordingForBatch will surface the upload failure
       }
-      stopRecordingForBatch(batchId, recordingPresign);
+      stopRecordingForBatch(batchId, recordingPresign, "ended");
     }
     setBatchEndingId(batchId);
     try {
@@ -565,7 +565,7 @@ function TeacherRegister() {
       } catch {
         // stopRecordingForBatch will surface the upload failure
       }
-      stopRecordingForBatch(batchId, recordingPresign);
+      stopRecordingForBatch(batchId, recordingPresign, "restarted");
     }
     setBatchRestartingId(batchId);
     try {
@@ -625,7 +625,7 @@ function TeacherRegister() {
       } catch {
         // stopRecordingForBatch will surface the upload failure
       }
-      stopRecordingForBatch(batchId, recordingPresign);
+      stopRecordingForBatch(batchId, recordingPresign, "cancelled");
     }
     setBatchCancellingId(batchId);
     try {
@@ -707,7 +707,10 @@ function TeacherRegister() {
   // Runs in the background — never awaited by the caller, so a slow S3
   // upload can't block the teacher from ending class. `presign`, when
   // provided, is one already reserved before the session was closed.
-  const uploadRecording = async (batchId, blob, durationSeconds, presign) => {
+  // `stoppedReason` records what actually triggered the stop (ended /
+  // restarted / cancelled / manual) so admins can tell a recording from a
+  // properly finished class apart from a Restart/Cancel leftover.
+  const uploadRecording = async (batchId, blob, durationSeconds, presign, stoppedReason) => {
     try {
       const { upload_url, s3_key } = presign || (await reserveRecordingUpload(batchId));
       await fetch(upload_url, {
@@ -721,6 +724,7 @@ function TeacherRegister() {
         s3_key,
         duration_seconds: durationSeconds,
         file_size_mb: blob.size / (1024 * 1024),
+        stopped_reason: stoppedReason || "manual",
       });
       setToast({ variant: "success", message: "Recording saved." });
     } catch {
@@ -737,14 +741,16 @@ function TeacherRegister() {
     }
   };
 
-  const stopRecordingForBatch = (batchId, presign) => {
+  const stopRecordingForBatch = (batchId, presign, stoppedReason) => {
     const recorder = recordersRef.current[batchId];
     if (!recorder) return;
     delete recordersRef.current[batchId];
     setRecordingStatusByBatch((prev) => ({ ...prev, [batchId]: "uploading" }));
     recorder
       .stop()
-      .then(({ blob, durationSeconds }) => uploadRecording(batchId, blob, durationSeconds, presign))
+      .then(({ blob, durationSeconds }) =>
+        uploadRecording(batchId, blob, durationSeconds, presign, stoppedReason)
+      )
       .catch(() => {
         setToast({ variant: "danger", message: "Couldn't finish recording." });
         setRecordingStatusByBatch((prev) => {
@@ -2000,7 +2006,7 @@ function TeacherRegister() {
                                           <button
                                             type="button"
                                             className="btn btn-sm btn-danger"
-                                            onClick={() => stopRecordingForBatch(b.id)}
+                                            onClick={() => stopRecordingForBatch(b.id, null, "manual")}
                                           >
                                             <i className="bi bi-stop-circle me-1"></i>
                                             Stop Recording

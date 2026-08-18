@@ -877,6 +877,7 @@ const getBatchRecordingsAdmin = async (req, res) => {
         duration_seconds: r.duration_seconds,
         file_size_mb: r.file_size_mb,
         created_at: r.created_at,
+        stopped_reason: r.stopped_reason,
       })),
     });
   } catch (error) {

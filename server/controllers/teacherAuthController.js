@@ -1063,7 +1063,7 @@ const getRecordingUploadUrl = async (req, res) => {
 // S3 object.
 const completeRecordingUpload = async (req, res) => {
   try {
-    const { slug, batch_id, s3_key, duration_seconds, file_size_mb } = req.body;
+    const { slug, batch_id, s3_key, duration_seconds, file_size_mb, stopped_reason } = req.body;
     if (!batch_id || !s3_key) {
       return res.status(400).json({ success: false, message: "Batch and recording key are required." });
     }
@@ -1088,6 +1088,7 @@ const completeRecordingUpload = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid recording key for this batch." });
     }
 
+    const validReasons = ["ended", "restarted", "cancelled", "manual"];
     const todayStr = new Date().toISOString().slice(0, 10);
     const recording = await ClassRecording.create({
       admin_id: batch.admin_id,
@@ -1098,6 +1099,7 @@ const completeRecordingUpload = async (req, res) => {
       duration_seconds: duration_seconds || null,
       file_size_mb: file_size_mb || null,
       uploaded_by: "Teacher",
+      stopped_reason: validReasons.includes(stopped_reason) ? stopped_reason : null,
     });
 
     res.status(201).json({ success: true, data: { id: recording.id } });
@@ -1129,6 +1131,7 @@ const getBatchRecordings = async (req, res) => {
         duration_seconds: r.duration_seconds,
         file_size_mb: r.file_size_mb,
         created_at: r.created_at,
+        stopped_reason: r.stopped_reason,
       })),
     });
   } catch (error) {
