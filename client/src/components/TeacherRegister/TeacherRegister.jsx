@@ -252,6 +252,22 @@ function TeacherRegister() {
       .catch(() => setBatchProgress([]));
   }, [slug]);
 
+  // A closed tab can't be intercepted to force an upload — this is just a
+  // last line of defense so an accidental close doesn't silently discard a
+  // recording that was never stopped through any of the app's own buttons.
+  useEffect(() => {
+    const hasActiveRecording = Object.values(recordingStatusByBatch).some(
+      (status) => status === "recording" || status === "uploading"
+    );
+    if (!hasActiveRecording) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [recordingStatusByBatch]);
+
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3000);
@@ -529,6 +545,12 @@ function TeacherRegister() {
     ) {
       return;
     }
+    // Restart wipes the session, but a recording already in progress is
+    // still real captured content — stop and save it rather than silently
+    // leaving it running with nothing to ever collect it.
+    if (recordingStatusByBatch[batchId] === "recording") {
+      stopRecordingForBatch(batchId);
+    }
     setBatchRestartingId(batchId);
     try {
       await API.post("/teacher-auth/restart-batch", { slug, batch_id: batchId });
@@ -579,6 +601,9 @@ function TeacherRegister() {
       )
     ) {
       return;
+    }
+    if (recordingStatusByBatch[batchId] === "recording") {
+      stopRecordingForBatch(batchId);
     }
     setBatchCancellingId(batchId);
     try {
