@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 // No static access key/secret anywhere — the SDK's default credential
@@ -29,4 +29,15 @@ const getPlaybackUrl = async ({ key }) => {
   return getSignedUrl(client, command, { expiresIn: 300 });
 };
 
-module.exports = { getUploadUrl, getPlaybackUrl };
+// Actually removes the object from S3 — used when an admin deletes a
+// recording, so storage cost doesn't accumulate from old test/unwanted videos.
+const deleteObject = async ({ key }) => {
+  const client = getClient();
+  const command = new DeleteObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key,
+  });
+  await client.send(command);
+};
+
+module.exports = { getUploadUrl, getPlaybackUrl, deleteObject };

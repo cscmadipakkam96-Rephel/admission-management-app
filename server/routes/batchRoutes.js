@@ -15,6 +15,7 @@ const {
   getStudentTracking,
   getBatchRecordingsAdmin,
   getRecordingPlaybackUrlAdmin,
+  deleteRecordingAdmin,
 } = require("../controllers/batchController");
 
 router.get("/subject-teachers/:subjectId", getSubjectTeachers);
@@ -24,6 +25,7 @@ router.get("/subject-completion-chart", getSubjectCompletionChart);
 router.get("/student-tracking", getStudentTracking);
 router.get("/:batchId/recordings", getBatchRecordingsAdmin);
 router.get("/recordings/:recordingId/playback-url", getRecordingPlaybackUrlAdmin);
+router.delete("/recordings/:recordingId", deleteRecordingAdmin);
 router.get("/", getAllBatches);
 router.post("/", createBatch);
 router.put("/:id", updateBatch);

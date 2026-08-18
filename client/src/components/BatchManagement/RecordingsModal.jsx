@@ -9,6 +9,7 @@ function RecordingsModal({ batch }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [playingId, setPlayingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     if (!batch) return;
@@ -31,6 +32,21 @@ function RecordingsModal({ batch }) {
       setError(err.response?.data?.message || "Failed to open recording.");
     } finally {
       setPlayingId(null);
+    }
+  };
+
+  const deleteRecording = async (recordingId) => {
+    if (!window.confirm("Delete this recording permanently? This can't be undone.")) {
+      return;
+    }
+    setDeletingId(recordingId);
+    try {
+      await API.delete(`/batches/recordings/${recordingId}`);
+      setRecordings((prev) => prev.filter((r) => r.id !== recordingId));
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to delete recording.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -78,12 +94,21 @@ function RecordingsModal({ batch }) {
                         <td className="text-end">
                           <button
                             type="button"
-                            className="btn btn-sm btn-outline-primary"
+                            className="btn btn-sm btn-outline-primary me-1"
                             disabled={playingId === r.id}
                             onClick={() => play(r.id)}
                           >
                             <i className="bi bi-play-fill me-1"></i>
                             {playingId === r.id ? "Opening..." : "Play"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            disabled={deletingId === r.id}
+                            onClick={() => deleteRecording(r.id)}
+                          >
+                            <i className="bi bi-trash me-1"></i>
+                            {deletingId === r.id ? "Deleting..." : "Delete"}
                           </button>
                         </td>
                       </tr>

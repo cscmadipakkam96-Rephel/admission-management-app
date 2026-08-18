@@ -9,7 +9,7 @@ const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
 const FeePayment = require("../models/FeePayment");
 const ClassRecording = require("../models/ClassRecording");
-const { getPlaybackUrl } = require("../utils/s3");
+const { getPlaybackUrl, deleteObject } = require("../utils/s3");
 const {
   VALID_SECTIONS,
   SECTION_LABELS,
@@ -906,6 +906,33 @@ const getRecordingPlaybackUrlAdmin = async (req, res) => {
   }
 };
 
+// Admin-only. Removes the actual object from S3 (storage shouldn't
+// accumulate from deleted/unwanted recordings) and soft-deletes the
+// metadata row (kept for audit, hidden from every list/playback endpoint).
+const deleteRecordingAdmin = async (req, res) => {
+  try {
+    const { recordingId } = req.params;
+    const recording = await ClassRecording.findOne({
+      where: { id: recordingId, is_deleted: false },
+    });
+    if (!recording) {
+      return res.status(404).json({ success: false, message: "Recording not found." });
+    }
+    const batch = await Batch.findOne({
+      where: { id: recording.batch_id, admin_id: req.admin.adminId },
+    });
+    if (!batch) {
+      return res.status(403).json({ success: false, message: "This recording doesn't belong to you." });
+    }
+    await deleteObject({ key: recording.s3_key });
+    recording.is_deleted = true;
+    await recording.save();
+    res.status(200).json({ success: true, message: "Recording deleted." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   coursesForSubject,
   includeOptionsFor,
@@ -922,5 +949,6 @@ module.exports = {
   getSubjectCompletionChart,
   getBatchRecordingsAdmin,
   getRecordingPlaybackUrlAdmin,
+  deleteRecordingAdmin,
   getStudentTracking,
 };
