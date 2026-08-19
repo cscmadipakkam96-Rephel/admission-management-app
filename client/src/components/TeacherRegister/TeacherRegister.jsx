@@ -1798,6 +1798,7 @@ function TeacherRegister() {
                 </div>
               )}
 
+              {/* Mark Not Available Today — commented out, not deleted; re-enable if needed later.
               {!dashboard.holiday && (
                 <div className="card shadow-sm mb-4">
                   <div className="card-body">
@@ -1870,6 +1871,7 @@ function TeacherRegister() {
                   </div>
                 </div>
               )}
+              */}
 
               {dashboard.todayBatches?.length > 0 && (
                 <div className="card shadow-sm mb-4">
