@@ -279,6 +279,14 @@ function List() {
     currentPage * ROWS_PER_PAGE
   );
 
+  // Read from our own published_to_student_app flag only — no live check
+  // against every admission here, that'd be a request per row just to
+  // render a badge. Historical records synced before this flag existed
+  // still count as "pending" until they're re-saved or bulk-synced once.
+  const pendingSyncCount = admissions.filter(
+    (a) => !a.published_to_student_app
+  ).length;
+
   // One-time bulk catch-up for students who existed before auto-sync-on-save
   // shipped (or whose earlier sync attempt failed) — everything else stays
   // in sync automatically via AdmissionModal's own save flow. Sequential,
@@ -299,6 +307,9 @@ function List() {
     for (const admission of eligible) {
       try {
         await registerToStudentApp(admission);
+        await API.put(`/admissions/${admission.id}`, {
+          published_to_student_app: true,
+        });
         succeeded += 1;
       } catch (error) {
         console.error(`Student App sync failed for ${admission.comn_enrol_no}:`, error);
@@ -306,6 +317,7 @@ function List() {
       }
     }
     setSyncingAll(false);
+    fetchAdmissions();
     setToast({
       variant: failed === 0 ? "success" : "danger",
       message: `Synced ${succeeded}/${eligible.length} to Student App${
@@ -413,7 +425,7 @@ function List() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 align-items-center">
           <button
             type="button"
             className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1"
@@ -423,6 +435,11 @@ function List() {
             <i className="bi bi-cloud-upload"></i>{" "}
             {syncingAll ? "Syncing..." : "Sync All to Student App"}
           </button>
+          {pendingSyncCount > 0 && (
+            <span className="badge bg-warning text-dark">
+              {pendingSyncCount} pending
+            </span>
+          )}
           <button
             type="button"
             className="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
