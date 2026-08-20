@@ -9,7 +9,11 @@ const { sectionsOverlapOnDays } = require("./sections");
 // conflict.
 const findConflicts = async ({ adminId, section, timing, subjectId, teacherId, excludeId }) => {
   const newRange = parseTimeRange(timing);
-  const where = { admin_id: adminId, active: true };
+  // subject_completed batches have finished occupying their slot — a
+  // teacher who declares a batch done frees its timing/section up for a
+  // new batch, without needing to also deactivate (and so disappear from
+  // Student Tracking) the completed one.
+  const where = { admin_id: adminId, active: true, subject_completed: false };
   if (excludeId) where.id = { [Op.ne]: excludeId };
 
   const existingBatches = await Batch.findAll({ where });

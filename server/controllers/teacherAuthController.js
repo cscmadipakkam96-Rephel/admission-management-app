@@ -1499,6 +1499,23 @@ const unmarkSubjectComplete = async (req, res) => {
     if (!batch) {
       return res.status(404).json({ success: false, message: "Batch not found" });
     }
+    // Completing a batch frees its slot for a new one (see findConflicts).
+    // If a new batch has since taken that same slot, resuming this one
+    // would double-book it — block that instead of silently colliding.
+    const conflictMessage = await findConflicts({
+      adminId: batch.admin_id,
+      section: batch.section,
+      timing: batch.timing,
+      subjectId: batch.subject_id,
+      teacherId: batch.teacher_id,
+      excludeId: batch.id,
+    });
+    if (conflictMessage) {
+      return res.status(409).json({
+        success: false,
+        message: `Can't resume — another batch has since taken this slot. ${conflictMessage}`,
+      });
+    }
     await batch.update({ subject_completed: false, subject_completed_at: null });
     res.status(200).json({
       success: true,
