@@ -154,6 +154,14 @@ const Admission = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    // Tracks whether this student's login was ever pushed to the separate
+    // Flutter app's backend — the password itself is never stored here,
+    // only this status flag (see AdmissionModal.jsx's Publish/Remove flow).
+    published_to_student_app: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
   },
   {
     tableName: "admissions",

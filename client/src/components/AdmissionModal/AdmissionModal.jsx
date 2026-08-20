@@ -102,6 +102,8 @@ const initialState = {
 // hardcoded, not env-configured, since it only ever resolves on whoever's
 // machine is running that backend right now (never the deployed EC2).
 const STUDENT_APP_REGISTER_URL = "http://localhost:5000/api/register";
+const studentAppDeleteUrl = (comnEnrolNo) =>
+  `http://localhost:5000/api/register/${encodeURIComponent(comnEnrolNo)}`;
 
 function AdmissionModal({ editingRecord, onSuccess }) {
   const modalRef = useRef(null);
@@ -113,6 +115,8 @@ function AdmissionModal({ editingRecord, onSuccess }) {
   const [publishEnabled, setPublishEnabled] = useState(false);
   const [publishPassword, setPublishPassword] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -153,6 +157,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     setErrors({});
     setPublishEnabled(false);
     setPublishPassword("");
+    setIsPublished(Boolean(editingRecord?.published_to_student_app));
   }, [editingRecord]);
 
   useEffect(() => {
@@ -308,9 +313,21 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Publish failed.");
       }
+      // Best-effort: the publish itself already succeeded, so a failure
+      // here just means our own "Published" badge won't show next time —
+      // it doesn't warrant surfacing as an error to the admin.
+      try {
+        await API.put(`/admissions/${editingRecord.id}`, {
+          published_to_student_app: true,
+        });
+      } catch (flagError) {
+        console.error("Failed to record publish status locally:", flagError);
+      }
       setToast({ variant: "success", message: "Published to Student App." });
       setPublishPassword("");
       setPublishEnabled(false);
+      setIsPublished(true);
+      if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Publish to Student App failed:", error);
       setToast({
@@ -319,6 +336,46 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       });
     } finally {
       setPublishing(false);
+    }
+  };
+
+  // Deletes this student's row from the Flutter app's register table.
+  // Attendance history there is preserved by that app's own delete
+  // handler — this only removes the login credentials.
+  const handleRemovePublish = async () => {
+    if (!formData.comn_enrol_no.trim()) {
+      setToast({ variant: "danger", message: "No Enrollment Number to remove." });
+      return;
+    }
+
+    setRemoving(true);
+    try {
+      const response = await fetch(
+        studentAppDeleteUrl(formData.comn_enrol_no.trim()),
+        { method: "DELETE" }
+      );
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Remove failed.");
+      }
+      try {
+        await API.put(`/admissions/${editingRecord.id}`, {
+          published_to_student_app: false,
+        });
+      } catch (flagError) {
+        console.error("Failed to record publish status locally:", flagError);
+      }
+      setToast({ variant: "success", message: "Removed from Student App." });
+      setIsPublished(false);
+      if (onSuccess) onSuccess();
+    } catch (error) {
+      console.error("Remove from Student App failed:", error);
+      setToast({
+        variant: "danger",
+        message: error.message || "Couldn't reach the Student App backend.",
+      });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -825,9 +882,22 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                 {isEditMode && (
                   <div className="col-12">
                     <div className="border rounded p-3 bg-light">
-                      <span className="badge bg-secondary mb-2">
-                        Student App
-                      </span>
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <span className="badge bg-secondary">Student App</span>
+                        {isPublished && (
+                          <>
+                            <span className="badge bg-success">Published</span>
+                            <button
+                              type="button"
+                              className="btn btn-outline-danger btn-sm"
+                              onClick={handleRemovePublish}
+                              disabled={removing}
+                            >
+                              {removing ? "Removing..." : "Remove from Student App"}
+                            </button>
+                          </>
+                        )}
+                      </div>
                       <div className="row g-3 align-items-end">
                         <div className="col-md-6">
                           <label className="form-label">Password</label>
