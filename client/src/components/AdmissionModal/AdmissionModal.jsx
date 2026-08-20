@@ -102,7 +102,7 @@ const initialState = {
 // hardcoded, not env-configured, since it only ever resolves on whoever's
 // machine is running that backend right now (never the deployed EC2).
 const STUDENT_APP_REGISTER_URL = "http://localhost:5000/api/register";
-const studentAppDeleteUrl = (comnEnrolNo) =>
+const studentAppRecordUrl = (comnEnrolNo) =>
   `http://localhost:5000/api/register/${encodeURIComponent(comnEnrolNo)}`;
 
 function AdmissionModal({ editingRecord, onSuccess }) {
@@ -117,6 +117,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
   const [publishing, setPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [checkingPublishStatus, setCheckingPublishStatus] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -157,7 +158,39 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     setErrors({});
     setPublishEnabled(false);
     setPublishPassword("");
+    // Optimistic guess from our own (possibly stale) flag, corrected below
+    // by the live check — our flag only gets set going forward from the
+    // Publish/Remove actions themselves, so it can't be trusted for
+    // students published before this tracking existed.
     setIsPublished(Boolean(editingRecord?.published_to_student_app));
+  }, [editingRecord]);
+
+  // Source of truth is the Flutter app's own DB, not our local flag — asks
+  // it directly whenever the modal opens for a given student, so a student
+  // registered there before we started tracking this locally still shows
+  // correctly as published.
+  useEffect(() => {
+    const comnEnrolNo = editingRecord?.comn_enrol_no;
+    if (!comnEnrolNo) return;
+    let cancelled = false;
+    setCheckingPublishStatus(true);
+    fetch(studentAppRecordUrl(comnEnrolNo))
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.success) setIsPublished(Boolean(data.exists));
+      })
+      .catch((error) => {
+        console.error("Couldn't check Student App publish status:", error);
+        // Leave the optimistic guess in place — don't block the modal on
+        // this backend being unreachable.
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingPublishStatus(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [editingRecord]);
 
   useEffect(() => {
@@ -351,7 +384,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     setRemoving(true);
     try {
       const response = await fetch(
-        studentAppDeleteUrl(formData.comn_enrol_no.trim()),
+        studentAppRecordUrl(formData.comn_enrol_no.trim()),
         { method: "DELETE" }
       );
       const data = await response.json();
@@ -884,58 +917,63 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                     <div className="border rounded p-3 bg-light">
                       <div className="d-flex align-items-center gap-2 mb-2">
                         <span className="badge bg-secondary">Student App</span>
-                        {isPublished && (
-                          <>
-                            <span className="badge bg-success">Published</span>
-                            <button
-                              type="button"
-                              className="btn btn-outline-danger btn-sm"
-                              onClick={handleRemovePublish}
-                              disabled={removing}
-                            >
-                              {removing ? "Removing..." : "Remove from Student App"}
-                            </button>
-                          </>
+                        {checkingPublishStatus && (
+                          <span className="text-muted small">Checking...</span>
                         )}
                       </div>
-                      <div className="row g-3 align-items-end">
-                        <div className="col-md-6">
-                          <label className="form-label">Password</label>
-                          <input
-                            type="password"
-                            className="form-control"
-                            value={publishPassword}
-                            onChange={(e) => setPublishPassword(e.target.value)}
-                          />
+
+                      {isPublished ? (
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="badge bg-success">Published</span>
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm"
+                            onClick={handleRemovePublish}
+                            disabled={removing}
+                          >
+                            {removing ? "Removing..." : "Remove from Student App"}
+                          </button>
                         </div>
-                        <div className="col-md-6">
-                          <div className="form-check">
+                      ) : (
+                        <div className="row g-3 align-items-end">
+                          <div className="col-md-6">
+                            <label className="form-label">Password</label>
                             <input
-                              type="checkbox"
-                              className="form-check-input"
-                              id="publishToStudentApp"
-                              checked={publishEnabled}
-                              onChange={(e) => setPublishEnabled(e.target.checked)}
+                              type="password"
+                              className="form-control"
+                              value={publishPassword}
+                              onChange={(e) => setPublishPassword(e.target.value)}
                             />
-                            <label
-                              className="form-check-label"
-                              htmlFor="publishToStudentApp"
-                            >
-                              Publish to Student App
-                            </label>
                           </div>
-                          {publishEnabled && (
-                            <button
-                              type="button"
-                              className="btn btn-outline-primary btn-sm mt-2"
-                              onClick={handlePublish}
-                              disabled={publishing}
-                            >
-                              {publishing ? "Publishing..." : "Publish to Student App"}
-                            </button>
-                          )}
+                          <div className="col-md-6">
+                            <div className="form-check">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id="publishToStudentApp"
+                                checked={publishEnabled}
+                                onChange={(e) => setPublishEnabled(e.target.checked)}
+                              />
+                              <label
+                                className="form-check-label"
+                                htmlFor="publishToStudentApp"
+                              >
+                                Publish to Student App
+                              </label>
+                            </div>
+                            {publishEnabled && (
+                              <button
+                                type="button"
+                                className="btn btn-outline-primary btn-sm mt-2"
+                                onClick={handlePublish}
+                                disabled={publishing}
+                              >
+                                {publishing ? "Publishing..." : "Publish to Student App"}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 )}
