@@ -1,6 +1,11 @@
 import { useRef, useState, useEffect } from "react";
 import { Modal } from "bootstrap";
 import API from "../../api/api";
+import {
+  studentAppRecordUrl,
+  hasRequiredStudentAppFields,
+  registerToStudentApp,
+} from "../../utils/studentAppSync";
 
 const FIELD_LABELS = {
   course_name: "Course Name",
@@ -98,13 +103,6 @@ const initialState = {
   timings: "",
 };
 
-// Local-only dev URL for the separate Flutter app's backend — deliberately
-// hardcoded, not env-configured, since it only ever resolves on whoever's
-// machine is running that backend right now (never the deployed EC2).
-const STUDENT_APP_REGISTER_URL = "http://localhost:5000/api/register";
-const studentAppRecordUrl = (comnEnrolNo) =>
-  `http://localhost:5000/api/register/${encodeURIComponent(comnEnrolNo)}`;
-
 function AdmissionModal({ editingRecord, onSuccess }) {
   const modalRef = useRef(null);
   const [formData, setFormData] = useState(initialState);
@@ -112,12 +110,10 @@ function AdmissionModal({ editingRecord, onSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [courseOptions, setCourseOptions] = useState([]);
-  const [publishEnabled, setPublishEnabled] = useState(false);
-  const [publishPassword, setPublishPassword] = useState("");
-  const [publishing, setPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [checkingPublishStatus, setCheckingPublishStatus] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -156,8 +152,6 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       setFormData(initialState);
     }
     setErrors({});
-    setPublishEnabled(false);
-    setPublishPassword("");
     // Optimistic guess from our own (possibly stale) flag, corrected below
     // by the live check — our flag only gets set going forward from the
     // Publish/Remove actions themselves, so it can't be trusted for
@@ -294,6 +288,26 @@ function AdmissionModal({ editingRecord, onSuccess }) {
         (isEditMode
           ? "Admission updated successfully"
           : "Admission submitted successfully");
+
+      // Auto-sync to the Student App right after a successful save — no
+      // separate "Publish" step anymore. Silently skipped when required
+      // fields (Enrollment No / Name / E-mail / DOB) aren't all filled in
+      // yet; it'll sync on a later save once they are. Never blocks or
+      // fails the admission save itself.
+      const savedAdmission = response.data.data || { id: editingRecord?.id, ...payload };
+      if (hasRequiredStudentAppFields(savedAdmission)) {
+        try {
+          await registerToStudentApp(savedAdmission);
+          if (savedAdmission.id) {
+            await API.put(`/admissions/${savedAdmission.id}`, {
+              published_to_student_app: true,
+            });
+          }
+        } catch (syncError) {
+          console.error("Student App auto-sync failed:", syncError);
+        }
+      }
+
       setFormData(initialState);
       closeModal();
       if (onSuccess) onSuccess();
@@ -314,61 +328,33 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     }
   };
 
-  // Pushes this student's login credentials to the separate Flutter app's
-  // backend, so it's never stored in our own DB — this app never becomes
-  // the source of truth for student passwords, only a one-way publisher.
-  const handlePublish = async () => {
-    if (!publishPassword.trim()) {
-      setToast({ variant: "danger", message: "Enter a password before publishing." });
-      return;
-    }
-    if (!formData.comn_enrol_no.trim() || !formData.applicant_name.trim() || !formData.email.trim()) {
+  // Manual retry for the same auto-sync handleSubmit does — for when it's
+  // missed (e.g. the Flutter backend wasn't running at save time) and the
+  // admin wants to try again without re-saving the whole form.
+  const handleSyncNow = async () => {
+    if (!hasRequiredStudentAppFields(formData)) {
       setToast({
         variant: "danger",
-        message: "Enrollment Number, Name, and E-mail ID are all required to publish.",
+        message: "Enrollment Number, Name, E-mail ID, and Date of Birth are all required to register.",
       });
       return;
     }
-
-    setPublishing(true);
+    setSyncing(true);
     try {
-      const response = await fetch(STUDENT_APP_REGISTER_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          comn_enrol_no: formData.comn_enrol_no.trim(),
-          name: formData.applicant_name.trim(),
-          gmail: formData.email.trim(),
-          password: publishPassword,
-        }),
+      await registerToStudentApp(formData);
+      await API.put(`/admissions/${editingRecord.id}`, {
+        published_to_student_app: true,
       });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Publish failed.");
-      }
-      // Best-effort: the publish itself already succeeded, so a failure
-      // here just means our own "Published" badge won't show next time —
-      // it doesn't warrant surfacing as an error to the admin.
-      try {
-        await API.put(`/admissions/${editingRecord.id}`, {
-          published_to_student_app: true,
-        });
-      } catch (flagError) {
-        console.error("Failed to record publish status locally:", flagError);
-      }
-      setToast({ variant: "success", message: "Published to Student App." });
-      setPublishPassword("");
-      setPublishEnabled(false);
+      setToast({ variant: "success", message: "Registered to Student App." });
       setIsPublished(true);
-      if (onSuccess) onSuccess();
     } catch (error) {
-      console.error("Publish to Student App failed:", error);
+      console.error("Student App sync failed:", error);
       setToast({
         variant: "danger",
         message: error.message || "Couldn't reach the Student App backend.",
       });
     } finally {
-      setPublishing(false);
+      setSyncing(false);
     }
   };
 
@@ -934,44 +920,26 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                             {removing ? "Removing..." : "Remove from Student App"}
                           </button>
                         </div>
+                      ) : hasRequiredStudentAppFields(formData) ? (
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="text-muted small">
+                            Not registered yet — this saves and registers
+                            automatically, or:
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-sm"
+                            onClick={handleSyncNow}
+                            disabled={syncing}
+                          >
+                            {syncing ? "Registering..." : "Register now"}
+                          </button>
+                        </div>
                       ) : (
-                        <div className="row g-3 align-items-end">
-                          <div className="col-md-6">
-                            <label className="form-label">Password</label>
-                            <input
-                              type="password"
-                              className="form-control"
-                              value={publishPassword}
-                              onChange={(e) => setPublishPassword(e.target.value)}
-                            />
-                          </div>
-                          <div className="col-md-6">
-                            <div className="form-check">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                id="publishToStudentApp"
-                                checked={publishEnabled}
-                                onChange={(e) => setPublishEnabled(e.target.checked)}
-                              />
-                              <label
-                                className="form-check-label"
-                                htmlFor="publishToStudentApp"
-                              >
-                                Publish to Student App
-                              </label>
-                            </div>
-                            {publishEnabled && (
-                              <button
-                                type="button"
-                                className="btn btn-outline-primary btn-sm mt-2"
-                                onClick={handlePublish}
-                                disabled={publishing}
-                              >
-                                {publishing ? "Publishing..." : "Publish to Student App"}
-                              </button>
-                            )}
-                          </div>
+                        <div className="text-muted small">
+                          Fill in Enrollment Number, Name, E-mail ID, and
+                          Date of Birth, then save — this student will
+                          register to the Student App automatically.
                         </div>
                       )}
                     </div>

@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
+import { hasRequiredStudentAppFields, registerToStudentApp } from "../../utils/studentAppSync";
 import AdmissionModal from "../AdmissionModal/AdmissionModal";
 import AdmissionCharts from "../AdmissionCharts/AdmissionCharts";
 import AdmissionReportCard from "../AdmissionReportCard/AdmissionReportCard";
@@ -84,6 +85,7 @@ function List() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
   const [toast, setToast] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [chartRange, setChartRange] = useState({ startDate: "", endDate: "" });
   const [chartFilter, setChartFilter] = useState(null);
   const ROWS_PER_PAGE = 10;
@@ -277,6 +279,41 @@ function List() {
     currentPage * ROWS_PER_PAGE
   );
 
+  // One-time bulk catch-up for students who existed before auto-sync-on-save
+  // shipped (or whose earlier sync attempt failed) — everything else stays
+  // in sync automatically via AdmissionModal's own save flow. Sequential,
+  // not Promise.all, so a flood of requests doesn't overwhelm someone's
+  // local dev backend.
+  const handleSyncAll = async () => {
+    const eligible = admissions.filter(hasRequiredStudentAppFields);
+    if (eligible.length === 0) {
+      setToast({
+        variant: "danger",
+        message: "No admissions have Enrollment No, Name, E-mail, and DOB all filled in.",
+      });
+      return;
+    }
+    setSyncingAll(true);
+    let succeeded = 0;
+    let failed = 0;
+    for (const admission of eligible) {
+      try {
+        await registerToStudentApp(admission);
+        succeeded += 1;
+      } catch (error) {
+        console.error(`Student App sync failed for ${admission.comn_enrol_no}:`, error);
+        failed += 1;
+      }
+    }
+    setSyncingAll(false);
+    setToast({
+      variant: failed === 0 ? "success" : "danger",
+      message: `Synced ${succeeded}/${eligible.length} to Student App${
+        failed > 0 ? ` — ${failed} failed (see console)` : ""
+      }. ${admissions.length - eligible.length} skipped (missing required fields).`,
+    });
+  };
+
   const exportToExcel = () => {
     const data = sortedAdmissions.map((row) => {
       const record = {};
@@ -377,6 +414,15 @@ function List() {
           />
         </div>
         <div className="d-flex gap-2">
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1"
+            onClick={handleSyncAll}
+            disabled={syncingAll}
+          >
+            <i className="bi bi-cloud-upload"></i>{" "}
+            {syncingAll ? "Syncing..." : "Sync All to Student App"}
+          </button>
           <button
             type="button"
             className="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
