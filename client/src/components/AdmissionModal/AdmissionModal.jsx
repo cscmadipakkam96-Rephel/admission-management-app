@@ -98,6 +98,11 @@ const initialState = {
   timings: "",
 };
 
+// Local-only dev URL for the separate Flutter app's backend — deliberately
+// hardcoded, not env-configured, since it only ever resolves on whoever's
+// machine is running that backend right now (never the deployed EC2).
+const STUDENT_APP_REGISTER_URL = "http://localhost:5000/api/register";
+
 function AdmissionModal({ editingRecord, onSuccess }) {
   const modalRef = useRef(null);
   const [formData, setFormData] = useState(initialState);
@@ -105,6 +110,9 @@ function AdmissionModal({ editingRecord, onSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [courseOptions, setCourseOptions] = useState([]);
+  const [publishEnabled, setPublishEnabled] = useState(false);
+  const [publishPassword, setPublishPassword] = useState("");
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -143,6 +151,8 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       setFormData(initialState);
     }
     setErrors({});
+    setPublishEnabled(false);
+    setPublishPassword("");
   }, [editingRecord]);
 
   useEffect(() => {
@@ -263,6 +273,52 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Pushes this student's login credentials to the separate Flutter app's
+  // backend, so it's never stored in our own DB — this app never becomes
+  // the source of truth for student passwords, only a one-way publisher.
+  const handlePublish = async () => {
+    if (!publishPassword.trim()) {
+      setToast({ variant: "danger", message: "Enter a password before publishing." });
+      return;
+    }
+    if (!formData.comn_enrol_no.trim() || !formData.applicant_name.trim() || !formData.email.trim()) {
+      setToast({
+        variant: "danger",
+        message: "Enrollment Number, Name, and E-mail ID are all required to publish.",
+      });
+      return;
+    }
+
+    setPublishing(true);
+    try {
+      const response = await fetch(STUDENT_APP_REGISTER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          comn_enrol_no: formData.comn_enrol_no.trim(),
+          name: formData.applicant_name.trim(),
+          gmail: formData.email.trim(),
+          password: publishPassword,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Publish failed.");
+      }
+      setToast({ variant: "success", message: "Published to Student App." });
+      setPublishPassword("");
+      setPublishEnabled(false);
+    } catch (error) {
+      console.error("Publish to Student App failed:", error);
+      setToast({
+        variant: "danger",
+        message: error.message || "Couldn't reach the Student App backend.",
+      });
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -765,6 +821,54 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                     </div>
                   </div>
                 </div>
+
+                {isEditMode && (
+                  <div className="col-12">
+                    <div className="border rounded p-3 bg-light">
+                      <span className="badge bg-secondary mb-2">
+                        Student App
+                      </span>
+                      <div className="row g-3 align-items-end">
+                        <div className="col-md-6">
+                          <label className="form-label">Password</label>
+                          <input
+                            type="password"
+                            className="form-control"
+                            value={publishPassword}
+                            onChange={(e) => setPublishPassword(e.target.value)}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="publishToStudentApp"
+                              checked={publishEnabled}
+                              onChange={(e) => setPublishEnabled(e.target.checked)}
+                            />
+                            <label
+                              className="form-check-label"
+                              htmlFor="publishToStudentApp"
+                            >
+                              Publish to Student App
+                            </label>
+                          </div>
+                          {publishEnabled && (
+                            <button
+                              type="button"
+                              className="btn btn-outline-primary btn-sm mt-2"
+                              onClick={handlePublish}
+                              disabled={publishing}
+                            >
+                              {publishing ? "Publishing..." : "Publish to Student App"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="modal-footer">
