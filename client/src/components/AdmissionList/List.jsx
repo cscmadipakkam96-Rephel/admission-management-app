@@ -287,6 +287,13 @@ function List() {
     (a) => !a.published_to_student_app
   ).length;
 
+  // Of those pending, how many can't sync at all yet because Enrollment
+  // No / Name / E-mail / DOB isn't fully filled in — distinct from ones
+  // that are just waiting for the next save or a bulk-sync run.
+  const missingDetailsCount = admissions.filter(
+    (a) => !a.published_to_student_app && !hasRequiredStudentAppFields(a)
+  ).length;
+
   // One-time bulk catch-up for students who existed before auto-sync-on-save
   // shipped (or whose earlier sync attempt failed) — everything else stays
   // in sync automatically via AdmissionModal's own save flow. Sequential,
@@ -438,6 +445,14 @@ function List() {
           {pendingSyncCount > 0 && (
             <span className="badge bg-warning text-dark">
               {pendingSyncCount} pending
+            </span>
+          )}
+          {missingDetailsCount > 0 && (
+            <span
+              className="badge bg-secondary"
+              title="Missing Enrollment No, Name, E-mail, or Date of Birth"
+            >
+              {missingDetailsCount} missing details
             </span>
           )}
           <button

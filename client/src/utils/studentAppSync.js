@@ -1,10 +1,11 @@
-// Shared with AdmissionModal.jsx (auto-sync on save) and List.jsx (bulk
-// sync). This must run client-side, never server-side — the Flutter app's
-// backend is a local-dev-only URL that only resolves on whoever's browser
-// is open right now, not on our own EC2-hosted backend.
-const STUDENT_APP_REGISTER_URL = "http://localhost:5000/api/register";
+// Shared with AdmissionModal.jsx (auto-sync on save + rename handling) and
+// List.jsx (bulk sync + counts). Deliberately hardcoded rather than
+// env-configured — this is the separate Flutter app's own backend, not
+// ours, so it doesn't belong in this app's deploy config.
+const STUDENT_APP_BASE_URL = "http://13.62.125.222:5000";
+const STUDENT_APP_REGISTER_URL = `${STUDENT_APP_BASE_URL}/api/register`;
 export const studentAppRecordUrl = (comnEnrolNo) =>
-  `http://localhost:5000/api/register/${encodeURIComponent(comnEnrolNo)}`;
+  `${STUDENT_APP_BASE_URL}/api/register/${encodeURIComponent(comnEnrolNo)}`;
 
 // The Flutter app logs students in with comn_enrol_no + their date of
 // birth (DDMMYYYY) as the password — so these four are the only fields
@@ -18,9 +19,9 @@ export const hasRequiredStudentAppFields = (admission) =>
       admission?.date_of_birth
   );
 
-// Fire-and-forget by design at the call sites — a Flutter backend that's
-// not running right now shouldn't block saving an admission. Callers
-// decide whether/how to surface failures.
+// Fire-and-forget by design at the call sites — a Flutter backend hiccup
+// shouldn't block saving an admission. Callers decide whether/how to
+// surface failures.
 export const registerToStudentApp = async (admission) => {
   const response = await fetch(STUDENT_APP_REGISTER_URL, {
     method: "POST",
@@ -35,6 +36,28 @@ export const registerToStudentApp = async (admission) => {
   const data = await response.json();
   if (!response.ok || !data.success) {
     throw new Error(data.error || "Registration failed.");
+  }
+  return data;
+};
+
+export const checkStudentAppRegistered = async (comnEnrolNo) => {
+  const response = await fetch(studentAppRecordUrl(comnEnrolNo));
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error || "Status check failed.");
+  }
+  return Boolean(data.exists);
+};
+
+export const deleteFromStudentApp = async (comnEnrolNo) => {
+  const response = await fetch(studentAppRecordUrl(comnEnrolNo), {
+    method: "DELETE",
+  });
+  const data = await response.json();
+  // 404 (never registered under that number) isn't a failure worth
+  // surfacing to callers doing a rename cleanup — nothing to remove.
+  if (!response.ok && response.status !== 404) {
+    throw new Error(data.error || "Remove failed.");
   }
   return data;
 };

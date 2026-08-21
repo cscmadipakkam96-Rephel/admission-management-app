@@ -2,9 +2,10 @@ import { useRef, useState, useEffect } from "react";
 import { Modal } from "bootstrap";
 import API from "../../api/api";
 import {
-  studentAppRecordUrl,
   hasRequiredStudentAppFields,
   registerToStudentApp,
+  checkStudentAppRegistered,
+  deleteFromStudentApp,
 } from "../../utils/studentAppSync";
 
 const FIELD_LABELS = {
@@ -168,11 +169,9 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     if (!comnEnrolNo) return;
     let cancelled = false;
     setCheckingPublishStatus(true);
-    fetch(studentAppRecordUrl(comnEnrolNo))
-      .then((res) => res.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.success) setIsPublished(Boolean(data.exists));
+    checkStudentAppRegistered(comnEnrolNo)
+      .then((exists) => {
+        if (!cancelled) setIsPublished(exists);
       })
       .catch((error) => {
         console.error("Couldn't check Student App publish status:", error);
@@ -297,6 +296,20 @@ function AdmissionModal({ editingRecord, onSuccess }) {
       const savedAdmission = response.data.data || { id: editingRecord?.id, ...payload };
       if (hasRequiredStudentAppFields(savedAdmission)) {
         try {
+          // Enrollment No changed on an already-registered student — the
+          // Flutter app upserts by comn_enrol_no, so registering under the
+          // new number alone would leave the old number's row behind as an
+          // orphan (still loggable-into) instead of a clean rename. Clear
+          // it out first.
+          const oldComnEnrolNo = editingRecord?.comn_enrol_no?.toString().trim();
+          const newComnEnrolNo = savedAdmission.comn_enrol_no?.toString().trim();
+          if (isEditMode && oldComnEnrolNo && oldComnEnrolNo !== newComnEnrolNo) {
+            try {
+              await deleteFromStudentApp(oldComnEnrolNo);
+            } catch (renameError) {
+              console.error("Couldn't clear old Enrollment No before rename:", renameError);
+            }
+          }
           await registerToStudentApp(savedAdmission);
           if (savedAdmission.id) {
             await API.put(`/admissions/${savedAdmission.id}`, {
@@ -369,14 +382,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
 
     setRemoving(true);
     try {
-      const response = await fetch(
-        studentAppRecordUrl(formData.comn_enrol_no.trim()),
-        { method: "DELETE" }
-      );
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Remove failed.");
-      }
+      await deleteFromStudentApp(formData.comn_enrol_no.trim());
       try {
         await API.put(`/admissions/${editingRecord.id}`, {
           published_to_student_app: false,
