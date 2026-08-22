@@ -2,7 +2,7 @@
 // List.jsx (bulk sync + counts). Deliberately hardcoded rather than
 // env-configured — this is the separate Flutter app's own backend, not
 // ours, so it doesn't belong in this app's deploy config.
-const STUDENT_APP_BASE_URL = "http://13.62.125.222:5000";
+const STUDENT_APP_BASE_URL = "https://13-62-125-222.sslip.io";
 const STUDENT_APP_REGISTER_URL = `${STUDENT_APP_BASE_URL}/api/register`;
 export const studentAppRecordUrl = (comnEnrolNo) =>
   `${STUDENT_APP_BASE_URL}/api/register/${encodeURIComponent(comnEnrolNo)}`;
