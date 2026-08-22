@@ -283,16 +283,16 @@ function List() {
   // against every admission here, that'd be a request per row just to
   // render a badge. Historical records synced before this flag existed
   // still count as "pending" until they're re-saved or bulk-synced once.
-  const pendingSyncCount = admissions.filter(
+  const pendingSyncAdmissions = admissions.filter(
     (a) => !a.published_to_student_app
-  ).length;
+  );
 
   // Of those pending, how many can't sync at all yet because Enrollment
   // No / Name / E-mail / DOB isn't fully filled in — distinct from ones
   // that are just waiting for the next save or a bulk-sync run.
-  const missingDetailsCount = admissions.filter(
-    (a) => !a.published_to_student_app && !hasRequiredStudentAppFields(a)
-  ).length;
+  const missingDetailsAdmissions = pendingSyncAdmissions.filter(
+    (a) => !hasRequiredStudentAppFields(a)
+  );
 
   // One-time bulk catch-up for students who existed before auto-sync-on-save
   // shipped (or whose earlier sync attempt failed) — everything else stays
@@ -442,17 +442,37 @@ function List() {
             <i className="bi bi-cloud-upload"></i>{" "}
             {syncingAll ? "Syncing..." : "Sync All to Student App"}
           </button>
-          {pendingSyncCount > 0 && (
-            <span className="badge bg-warning text-dark">
-              {pendingSyncCount} pending
+          {pendingSyncAdmissions.length > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="badge bg-warning text-dark"
+              style={{ cursor: "pointer" }}
+              onClick={() =>
+                setChartFilter({
+                  ids: new Set(pendingSyncAdmissions.map((a) => a.id)),
+                  label: "Pending Sync to Student App",
+                })
+              }
+            >
+              {pendingSyncAdmissions.length} pending
             </span>
           )}
-          {missingDetailsCount > 0 && (
+          {missingDetailsAdmissions.length > 0 && (
             <span
+              role="button"
+              tabIndex={0}
               className="badge bg-secondary"
-              title="Missing Enrollment No, Name, E-mail, or Date of Birth"
+              style={{ cursor: "pointer" }}
+              title="Missing Enrollment No, Name, E-mail, or Date of Birth — click to filter the table"
+              onClick={() =>
+                setChartFilter({
+                  ids: new Set(missingDetailsAdmissions.map((a) => a.id)),
+                  label: "Missing Student App Details",
+                })
+              }
             >
-              {missingDetailsCount} missing details
+              {missingDetailsAdmissions.length} missing details
             </span>
           )}
           <button
