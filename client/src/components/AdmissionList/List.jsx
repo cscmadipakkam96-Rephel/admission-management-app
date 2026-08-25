@@ -288,7 +288,7 @@ function List() {
   );
 
   // Of those pending, how many can't sync at all yet because Enrollment
-  // No / Name / E-mail / DOB isn't fully filled in — distinct from ones
+  // No / Name / DOB isn't fully filled in — distinct from ones
   // that are just waiting for the next save or a bulk-sync run.
   const missingDetailsAdmissions = pendingSyncAdmissions.filter(
     (a) => !hasRequiredStudentAppFields(a)
@@ -304,7 +304,7 @@ function List() {
     if (eligible.length === 0) {
       setToast({
         variant: "danger",
-        message: "No admissions have Enrollment No, Name, E-mail, and DOB all filled in.",
+        message: "No admissions have Enrollment No, Name, and DOB all filled in.",
       });
       return;
     }
@@ -464,7 +464,7 @@ function List() {
               tabIndex={0}
               className="badge bg-secondary"
               style={{ cursor: "pointer" }}
-              title="Missing Enrollment No, Name, E-mail, or Date of Birth — click to filter the table"
+              title="Missing Enrollment No, Name, or Date of Birth — click to filter the table"
               onClick={() =>
                 setChartFilter({
                   ids: new Set(missingDetailsAdmissions.map((a) => a.id)),

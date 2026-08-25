@@ -8,14 +8,13 @@ export const studentAppRecordUrl = (comnEnrolNo) =>
   `${STUDENT_APP_BASE_URL}/api/register/${encodeURIComponent(comnEnrolNo)}`;
 
 // The Flutter app logs students in with comn_enrol_no + their date of
-// birth (DDMMYYYY) as the password — so these four are the only fields
+// birth (DDMMYYYY) as the password — so these three are the only fields
 // that matter for registration; anything else on the admission is
 // irrelevant to it.
 export const hasRequiredStudentAppFields = (admission) =>
   Boolean(
     admission?.comn_enrol_no?.toString().trim() &&
       admission?.applicant_name?.toString().trim() &&
-      admission?.email?.toString().trim() &&
       admission?.date_of_birth
   );
 
@@ -29,7 +28,6 @@ export const registerToStudentApp = async (admission) => {
     body: JSON.stringify({
       comn_enrol_no: admission.comn_enrol_no.toString().trim(),
       name: admission.applicant_name.toString().trim(),
-      gmail: admission.email.toString().trim(),
       date_of_birth: admission.date_of_birth,
     }),
   });

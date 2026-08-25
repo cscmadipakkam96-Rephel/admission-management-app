@@ -290,7 +290,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
 
       // Auto-sync to the Student App right after a successful save — no
       // separate "Publish" step anymore. Silently skipped when required
-      // fields (Enrollment No / Name / E-mail / DOB) aren't all filled in
+      // fields (Enrollment No / Name / DOB) aren't all filled in
       // yet; it'll sync on a later save once they are. Never blocks or
       // fails the admission save itself.
       const savedAdmission = response.data.data || { id: editingRecord?.id, ...payload };
@@ -348,7 +348,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
     if (!hasRequiredStudentAppFields(formData)) {
       setToast({
         variant: "danger",
-        message: "Enrollment Number, Name, E-mail ID, and Date of Birth are all required to register.",
+        message: "Enrollment Number, Name, and Date of Birth are all required to register.",
       });
       return;
     }
@@ -943,7 +943,7 @@ function AdmissionModal({ editingRecord, onSuccess }) {
                         </div>
                       ) : (
                         <div className="text-muted small">
-                          Fill in Enrollment Number, Name, E-mail ID, and
+                          Fill in Enrollment Number, Name, and
                           Date of Birth, then save — this student will
                           register to the Student App automatically.
                         </div>
