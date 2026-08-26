@@ -161,6 +161,10 @@ function TeacherRegister() {
   const [expandedBatchId, setExpandedBatchId] = useState(null);
   const [batchMarkingId, setBatchMarkingId] = useState(null);
   const [batchProgress, setBatchProgress] = useState([]);
+  // Which of "My Batches — Progress & Covered Topics" to show — defaults to
+  // ongoing since that's what a teacher checks day to day; completed ones
+  // are for reference/audit, not something they act on daily.
+  const [progressTab, setProgressTab] = useState("ongoing");
   const [expandedProgressBatchId, setExpandedProgressBatchId] = useState(null);
   const [expandedSessionKey, setExpandedSessionKey] = useState(null);
   const [subjectCompleteSubmittingId, setSubjectCompleteSubmittingId] = useState(null);
@@ -190,7 +194,7 @@ function TeacherRegister() {
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
   const [expandedSubjectIds, setExpandedSubjectIds] = useState(() => new Set());
-  // "Forgot Class" — backfill/edit a session with an explicit date/time
+  // "Add Past Class" — backfill/edit a session with an explicit date/time
   // instead of the live Start/End Class flow. sessionId null = adding a
   // new missed class; sessionId set = editing that existing entry.
   const [sessionForm, setSessionForm] = useState(null);
@@ -2381,10 +2385,38 @@ function TeacherRegister() {
               <div className="card shadow-sm mb-4">
                 <div className="card-body">
                   <h5 className="mb-3">My Batches — Progress &amp; Covered Topics</h5>
-                  {batchProgress.length === 0 ? (
-                    <div className="text-muted small">No batches assigned yet.</div>
+                  <div className="btn-group mb-3" role="group">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${progressTab === "ongoing" ? "btn-primary" : "btn-outline-primary"}`}
+                      onClick={() => setProgressTab("ongoing")}
+                    >
+                      Ongoing (
+                      {batchProgress.filter((bp) => !bp.subjectCompleted).length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${progressTab === "completed" ? "btn-primary" : "btn-outline-primary"}`}
+                      onClick={() => setProgressTab("completed")}
+                    >
+                      Completed (
+                      {batchProgress.filter((bp) => bp.subjectCompleted).length})
+                    </button>
+                  </div>
+                  {batchProgress.filter((bp) =>
+                    progressTab === "completed" ? bp.subjectCompleted : !bp.subjectCompleted
+                  ).length === 0 ? (
+                    <div className="text-muted small">
+                      {progressTab === "completed"
+                        ? "No completed batches yet."
+                        : "No ongoing batches."}
+                    </div>
                   ) : (
-                    batchProgress.map((bp) => {
+                    batchProgress
+                      .filter((bp) =>
+                        progressTab === "completed" ? bp.subjectCompleted : !bp.subjectCompleted
+                      )
+                      .map((bp) => {
                       const isOpen = expandedProgressBatchId === bp.id;
                       return (
                         <div key={bp.id} className="border rounded p-3 mb-2">
@@ -2519,7 +2551,7 @@ function TeacherRegister() {
                                     }}
                                   >
                                     <i className="bi bi-clock-history me-1"></i>
-                                    Forgot Class
+                                    Add Past Class
                                   </button>
                                 )}
                               </div>
