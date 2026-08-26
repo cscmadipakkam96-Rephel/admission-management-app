@@ -1218,6 +1218,15 @@ const getBatchProgress = async (req, res) => {
       ? await Attendance.findAll({ where: { batch_id: batchIds } })
       : [];
 
+    // Manual lookup rather than a Sequelize include — Batch already has
+    // other associations declared against it, and one more previously
+    // broke sync({alter:true}) (see the model's own comment).
+    const editorIds = [...new Set(batches.map((b) => b.last_edited_by_teacher_id).filter(Boolean))];
+    const editors = editorIds.length
+      ? await Teacher.findAll({ where: { id: editorIds }, attributes: ["id", "teacher_name"] })
+      : [];
+    const editorNameById = new Map(editors.map((t) => [t.id, t.teacher_name]));
+
     const data = batches.map((b) => {
       const students = (b.Students || []).map((s) => ({
         id: s.id,
@@ -1273,6 +1282,9 @@ const getBatchProgress = async (req, res) => {
         subjectCompleted: b.subject_completed,
         subjectCompletedAt: b.subject_completed_at,
         created_by_teacher_id: b.created_by_teacher_id,
+        last_edited_by_teacher_id: b.last_edited_by_teacher_id,
+        last_edited_by_teacher_name: editorNameById.get(b.last_edited_by_teacher_id) || null,
+        last_edited_at: b.last_edited_at,
       };
     });
 
@@ -1653,19 +1665,22 @@ const createOwnBatch = async (req, res) => {
 const updateOwnBatch = async (req, res) => {
   try {
     const { id } = req.params;
+    // A teacher can edit any batch assigned to them — including
+    // admin-created ones, not just batches they created themselves — but
+    // never another teacher's batch. Every edit through this endpoint
+    // stamps last_edited_by_teacher_id/at below, regardless of who
+    // originally created the batch.
     const batch = await Batch.findOne({
       where: {
         id,
         admin_id: req.teacher.admin_id,
         teacher_id: req.teacher.teacherId,
-        created_by_teacher_id: req.teacher.teacherId,
       },
     });
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message:
-          "Batch not found, or you don't have permission to edit it — you can only edit batches you created yourself.",
+        message: "Batch not found, or you don't have permission to edit it.",
       });
     }
 
@@ -1704,6 +1719,8 @@ const updateOwnBatch = async (req, res) => {
       subject_id,
       timing: timing.trim(),
       num_days: num_days === "" || num_days === undefined ? null : num_days,
+      last_edited_by_teacher_id: req.teacher.teacherId,
+      last_edited_at: new Date(),
     });
 
     if (admission_ids) {

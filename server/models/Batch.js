@@ -70,6 +70,19 @@ const Batch = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // Who last edited this batch's own fields (name/section/subject/timing)
+    // via the teacher portal, and when — surfaced to both admin (Batch
+    // Management) and the teacher's own batch card. Plain FK-shaped column,
+    // no association call — see the note below on why.
+    last_edited_by_teacher_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: Teacher, key: "id" },
+    },
+    last_edited_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: "batches",

@@ -2414,6 +2414,11 @@ function TeacherRegister() {
                                   Subject Completed
                                 </span>
                               )}
+                              {bp.last_edited_by_teacher_name && (
+                                <div className="text-muted small">
+                                  Edited by {bp.last_edited_by_teacher_name}
+                                </div>
+                              )}
                               <div className="text-muted small">
                                 <i className="bi bi-clock me-1"></i>
                                 {bp.timing || "No timing set"}
@@ -2449,6 +2454,16 @@ function TeacherRegister() {
                                 </div>
                               )}
                             </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditOwnBatchForm(bp);
+                              }}
+                            >
+                              <i className="bi bi-pencil"></i> Edit
+                            </button>
                             <i
                               className={`bi ${isOpen ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}
                             ></i>

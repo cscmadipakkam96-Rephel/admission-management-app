@@ -195,9 +195,19 @@ const getAllBatches = async (req, res) => {
       include: includeOptionsFor(todayStr()),
       order: [["id", "ASC"]],
     });
+    // Manual lookup rather than a Sequelize include for
+    // last_edited_by_teacher_id — Batch already has other associations
+    // declared against it, and one more previously broke
+    // sync({alter:true}) (see the model's own comment).
+    const editorIds = [...new Set(batches.map((b) => b.last_edited_by_teacher_id).filter(Boolean))];
+    const editors = editorIds.length
+      ? await Teacher.findAll({ where: { id: editorIds }, attributes: ["id", "teacher_name"] })
+      : [];
+    const editorNameById = new Map(editors.map((t) => [t.id, t.teacher_name]));
     const data = batches.map((b) => {
       const json = b.toJSON();
       json.section_active_today = isSectionActiveToday(b.section);
+      json.last_edited_by_teacher_name = editorNameById.get(b.last_edited_by_teacher_id) || null;
       return json;
     });
     res.status(200).json({ success: true, data, sectionLabels: SECTION_LABELS });
