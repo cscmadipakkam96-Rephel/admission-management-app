@@ -9,7 +9,7 @@ const BatchSubstitution = require("../models/BatchSubstitution");
 const Attendance = require("../models/Attendance");
 const FeePayment = require("../models/FeePayment");
 const ClassRecording = require("../models/ClassRecording");
-const { getPlaybackUrl, deleteObject } = require("../utils/s3");
+const { getPlaybackUrl, deleteObject, deleteFromStudentAppBucket } = require("../utils/s3");
 const {
   VALID_SECTIONS,
   SECTION_LABELS,
@@ -936,6 +936,35 @@ const deleteRecordingAdmin = async (req, res) => {
       return res.status(403).json({ success: false, message: "This recording doesn't belong to you." });
     }
     await deleteObject({ key: recording.s3_key });
+
+    // Clean up every fanned-out copy in the Student App's bucket too — one
+    // per student who was enrolled in this batch at record time. Best-effort:
+    // our own copy is already gone above, so a Student App cleanup failure
+    // shouldn't block this request (a stray copy there is a minor leftover,
+    // not a correctness problem — the app has no reason to ever surface it
+    // outside its videos/<comn_enrol_no>/ listing).
+    if (process.env.STUDENT_APP_S3_BUCKET_NAME) {
+      try {
+        const batchWithStudents = await Batch.findOne({
+          where: { id: recording.batch_id },
+          include: [{ model: Admission, as: "Students", through: { attributes: [] } }],
+        });
+        const filename = recording.s3_key.split("/").pop();
+        const enrolNos = (batchWithStudents?.Students || [])
+          .map((s) => s.comn_enrol_no?.toString().trim())
+          .filter(Boolean);
+        await Promise.all(
+          enrolNos.map((comnEnrolNo) =>
+            deleteFromStudentAppBucket({ key: `videos/${comnEnrolNo}/${filename}` }).catch((err) =>
+              console.error(`Student App video cleanup failed for ${comnEnrolNo}:`, err.message)
+            )
+          )
+        );
+      } catch (cleanupError) {
+        console.error("Student App video cleanup failed:", cleanupError.message);
+      }
+    }
+
     recording.is_deleted = true;
     await recording.save();
     res.status(200).json({ success: true, message: "Recording deleted." });

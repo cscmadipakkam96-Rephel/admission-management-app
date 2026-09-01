@@ -61,4 +61,21 @@ const copyToStudentAppBucket = async ({ sourceKey, destinationKey }) => {
   await client.send(command);
 };
 
-module.exports = { getUploadUrl, getPlaybackUrl, deleteObject, copyToStudentAppBucket };
+// Mirrors deleteObject but against the Student App's bucket — used to
+// remove a recording's fanned-out copy for one student's key.
+const deleteFromStudentAppBucket = async ({ key }) => {
+  const client = getClient();
+  const command = new DeleteObjectCommand({
+    Bucket: process.env.STUDENT_APP_S3_BUCKET_NAME,
+    Key: key,
+  });
+  await client.send(command);
+};
+
+module.exports = {
+  getUploadUrl,
+  getPlaybackUrl,
+  deleteObject,
+  copyToStudentAppBucket,
+  deleteFromStudentAppBucket,
+};
