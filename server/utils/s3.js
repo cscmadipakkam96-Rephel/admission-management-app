@@ -1,4 +1,10 @@
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  CopyObjectCommand,
+} = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 // No static access key/secret anywhere — the SDK's default credential
@@ -40,4 +46,19 @@ const deleteObject = async ({ key }) => {
   await client.send(command);
 };
 
-module.exports = { getUploadUrl, getPlaybackUrl, deleteObject };
+// Server-side copy (S3-to-S3, no bytes pass through this app) into the
+// separate Student App's own video bucket — that bucket's policy grants
+// this EC2's IAM role PutObject/GetObject, so no cross-account credentials
+// are needed. Used to fan a single recording out to every enrolled
+// student's own key without re-uploading the file once per student.
+const copyToStudentAppBucket = async ({ sourceKey, destinationKey }) => {
+  const client = getClient();
+  const command = new CopyObjectCommand({
+    Bucket: process.env.STUDENT_APP_S3_BUCKET_NAME,
+    Key: destinationKey,
+    CopySource: `${process.env.S3_BUCKET_NAME}/${encodeURIComponent(sourceKey)}`,
+  });
+  await client.send(command);
+};
+
+module.exports = { getUploadUrl, getPlaybackUrl, deleteObject, copyToStudentAppBucket };

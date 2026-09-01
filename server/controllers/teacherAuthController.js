@@ -15,7 +15,7 @@ const BatchSubstitution = require("../models/BatchSubstitution");
 const BatchStudent = require("../models/BatchStudent");
 const ClassRecording = require("../models/ClassRecording");
 const { getRoomSlug, signJitsiToken } = require("../utils/jitsiToken");
-const { getUploadUrl, getPlaybackUrl } = require("../utils/s3");
+const { getUploadUrl, getPlaybackUrl, copyToStudentAppBucket } = require("../utils/s3");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
 const { findConflicts } = require("../utils/batchConflicts");
@@ -1101,6 +1101,38 @@ const completeRecordingUpload = async (req, res) => {
       uploaded_by: "Teacher",
       stopped_reason: validReasons.includes(stopped_reason) ? stopped_reason : null,
     });
+
+    // Fan the same recording out to the Student App's own bucket, once per
+    // student enrolled in this batch — every enrolled student gets it,
+    // regardless of whether they actually attended (this isn't gated on
+    // attendance). A server-side S3 copy, not a re-upload, so this doesn't
+    // matter how large the video is. Best-effort: our own recording is
+    // already saved above, so a Student App sync failure here shouldn't
+    // fail this request.
+    if (process.env.STUDENT_APP_S3_BUCKET_NAME) {
+      try {
+        const batchWithStudents = await Batch.findOne({
+          where: { id: batch.id },
+          include: [{ model: Admission, as: "Students", through: { attributes: [] } }],
+        });
+        const filename = s3_key.split("/").pop();
+        const enrolNos = (batchWithStudents?.Students || [])
+          .map((s) => s.comn_enrol_no?.toString().trim())
+          .filter(Boolean);
+        await Promise.all(
+          enrolNos.map((comnEnrolNo) =>
+            copyToStudentAppBucket({
+              sourceKey: s3_key,
+              destinationKey: `videos/${comnEnrolNo}/${filename}`,
+            }).catch((err) =>
+              console.error(`Student App video sync failed for ${comnEnrolNo}:`, err.message)
+            )
+          )
+        );
+      } catch (syncError) {
+        console.error("Student App video fan-out failed:", syncError.message);
+      }
+    }
 
     res.status(201).json({ success: true, data: { id: recording.id } });
   } catch (error) {
