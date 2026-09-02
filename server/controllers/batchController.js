@@ -863,6 +863,70 @@ const getStudentTracking = async (req, res) => {
   }
 };
 
+// Cross-project read: pulls the Student App's own in-time/out-time +
+// completed-day-count tracking for every registered student, and merges
+// it against our own admissions so we can also flag who hasn't registered
+// there at all yet. This calls out to a different EC2/project's API —
+// never something the browser talks to directly (the API key stays
+// server-side only).
+const getStudentAppAttendance = async (req, res) => {
+  try {
+    if (!process.env.STUDENT_APP_ATTENDANCE_API_URL) {
+      return res.status(500).json({
+        success: false,
+        message: "Student App attendance sync is not configured on the server yet.",
+      });
+    }
+
+    const admissions = await Admission.findAll({
+      where: { admin_id: req.admin.adminId, active: true },
+      attributes: ["id", "applicant_name", "comn_enrol_no"],
+    });
+
+    const response = await fetch(process.env.STUDENT_APP_ATTENDANCE_API_URL, {
+      headers: { "x-api-key": process.env.STUDENT_APP_ATTENDANCE_API_KEY },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      return res.status(502).json({
+        success: false,
+        message: payload.error || "Failed to reach the Student App's attendance API.",
+      });
+    }
+
+    const attendanceByEnrolNo = new Map(
+      (payload.data || []).map((row) => [row.comn_enrol_no?.toString().trim(), row])
+    );
+
+    const registered = [];
+    const notRegistered = [];
+    admissions.forEach((a) => {
+      const enrolNo = a.comn_enrol_no?.toString().trim();
+      const record = enrolNo && attendanceByEnrolNo.get(enrolNo);
+      if (record) {
+        registered.push({
+          id: a.id,
+          applicant_name: a.applicant_name,
+          comn_enrol_no: a.comn_enrol_no,
+          total_day_count: record.total_day_count,
+          completed_day_count: record.completed_day_count,
+          attendance_days: record.attendance_days || [],
+        });
+      } else {
+        notRegistered.push({
+          id: a.id,
+          applicant_name: a.applicant_name,
+          comn_enrol_no: a.comn_enrol_no,
+        });
+      }
+    });
+
+    res.status(200).json({ success: true, data: { registered, notRegistered } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Admin-side counterpart to Online Class recordings — scoped by admin_id
 // rather than teacher_id, so an admin can see recordings across every
 // teacher's batches, not just their own.
@@ -991,4 +1055,5 @@ module.exports = {
   getRecordingPlaybackUrlAdmin,
   deleteRecordingAdmin,
   getStudentTracking,
+  getStudentAppAttendance,
 };

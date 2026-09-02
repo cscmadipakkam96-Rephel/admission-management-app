@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API from "../../api/api";
 import StudentRiskManagement from "./StudentRiskManagement";
+import StudentAppAttendance from "./StudentAppAttendance";
 
 const EXPORT_COLUMNS = [
   { key: "applicant_name", label: "Student Name" },
@@ -342,6 +343,13 @@ function StudentTracking() {
           >
             Student Risk Management
           </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === "studentapp" ? "btn-primary" : "btn-outline-primary"}`}
+            onClick={() => setActiveTab("studentapp")}
+          >
+            Student App Attendance
+          </button>
         </div>
 
         {activeTab === "risk" ? (
@@ -351,6 +359,8 @@ function StudentTracking() {
             error={error}
             onOpenStudent={handleOpenFromRisk}
           />
+        ) : activeTab === "studentapp" ? (
+          <StudentAppAttendance />
         ) : loading ? (
           <p className="text-center text-muted p-4">Loading...</p>
         ) : error ? (

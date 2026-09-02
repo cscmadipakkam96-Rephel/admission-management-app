@@ -13,6 +13,7 @@ const {
   getTeacherBatchProgress,
   getSubjectCompletionChart,
   getStudentTracking,
+  getStudentAppAttendance,
   getBatchRecordingsAdmin,
   getRecordingPlaybackUrlAdmin,
   deleteRecordingAdmin,
@@ -23,6 +24,7 @@ router.get("/subject-students", getSubjectStudents);
 router.get("/teacher-progress", getTeacherBatchProgress);
 router.get("/subject-completion-chart", getSubjectCompletionChart);
 router.get("/student-tracking", getStudentTracking);
+router.get("/student-app-attendance", getStudentAppAttendance);
 router.get("/:batchId/recordings", getBatchRecordingsAdmin);
 router.get("/recordings/:recordingId/playback-url", getRecordingPlaybackUrlAdmin);
 router.delete("/recordings/:recordingId", deleteRecordingAdmin);
