@@ -72,10 +72,30 @@ const deleteFromStudentAppBucket = async ({ key }) => {
   await client.send(command);
 };
 
+// Same server-side copy as copyToStudentAppBucket, but stamps the object
+// with custom S3 metadata (title/price/etc.) — used for the paid Course
+// Video catalog so the Flutter side can read those details straight off
+// the S3 object itself before it has its own catalog API. Metadata VALUES
+// must be plain ASCII (S3 rejects non-ASCII header bytes), so callers
+// encodeURIComponent() anything that might contain non-Latin characters
+// (e.g. a Tamil title) before passing it in here.
+const copyToStudentAppBucketWithMetadata = async ({ sourceKey, destinationKey, metadata }) => {
+  const client = getClient();
+  const command = new CopyObjectCommand({
+    Bucket: process.env.STUDENT_APP_S3_BUCKET_NAME,
+    Key: destinationKey,
+    CopySource: `${process.env.S3_BUCKET_NAME}/${encodeURIComponent(sourceKey)}`,
+    MetadataDirective: "REPLACE",
+    Metadata: metadata,
+  });
+  await client.send(command);
+};
+
 module.exports = {
   getUploadUrl,
   getPlaybackUrl,
   deleteObject,
   copyToStudentAppBucket,
   deleteFromStudentAppBucket,
+  copyToStudentAppBucketWithMetadata,
 };

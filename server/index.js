@@ -29,6 +29,7 @@ const BatchSession = require("./models/BatchSession");
 const BatchSubstitution = require("./models/BatchSubstitution");
 const FollowUp = require("./models/FollowUp");
 const ClassRecording = require("./models/ClassRecording");
+const CourseVideo = require("./models/CourseVideo");
 
 const Admin = require("./models/Admin");
 
@@ -51,6 +52,7 @@ const batchRoutes = require("./routes/batchRoutes");
 const followUpRoutes = require("./routes/followUpRoutes");
 const reviewRoutes = require("./routes/reviewRoutes");
 const whatsappRoutes = require("./routes/whatsappRoutes");
+const courseVideoRoutes = require("./routes/courseVideoRoutes");
 const adminAuthRoutes = require("./routes/adminAuthRoutes");
 const requireAdminAuth = require("./middleware/adminAuth");
 
@@ -104,6 +106,7 @@ app.use("/api/entry-attendance", requireAdminAuth, entryAttendanceRoutes);
 app.use("/api/batches", requireAdminAuth, batchRoutes);
 app.use("/api/follow-ups", requireAdminAuth, followUpRoutes);
 app.use("/api/whatsapp", requireAdminAuth, whatsappRoutes);
+app.use("/api/course-videos", requireAdminAuth, courseVideoRoutes);
 
 // One-time, idempotent: splits any admission's father_husband_name that
 // still bundles a dot-separated initial (e.g. "R.Yasir") into

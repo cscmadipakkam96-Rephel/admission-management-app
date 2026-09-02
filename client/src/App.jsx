@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Outlet, useNavigate, useOutletContext } from "react-router-dom";
-import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity, FiPhoneCall, FiStar, FiMessageCircle } from "react-icons/fi";
+import { FiFileText, FiUsers, FiBookOpen, FiDollarSign, FiClipboard, FiLayers, FiCheckSquare, FiBook, FiUserCheck, FiCalendar, FiLogIn, FiTrendingUp, FiActivity, FiPhoneCall, FiStar, FiMessageCircle, FiVideo } from "react-icons/fi";
 import Form from "./components/AdmissionForm/Form";
 import List from "./components/AdmissionList/List";
 import InactiveList from "./components/InactiveList/InactiveList";
@@ -19,6 +19,7 @@ import InactiveExpenses from "./components/ExpenseTracking/InactiveExpenses";
 import StudentTracking from "./components/StudentTracking/StudentTracking";
 import FollowUpManagement from "./components/FollowUpManagement/FollowUpManagement";
 import WhatsAppSend from "./components/WhatsAppSend/WhatsAppSend";
+import CourseVideoDelivery from "./components/CourseVideoDelivery/CourseVideoDelivery";
 import StudentReview from "./components/StudentReview/StudentReview";
 import OnlineClassJoin from "./components/OnlineClassJoin/OnlineClassJoin";
 import AttendanceList from "./components/AttendanceList/AttendanceList";
@@ -102,6 +103,9 @@ function AdminLayout() {
           <NavLink to="/whatsapp-send">
             <FiMessageCircle /> WhatsApp
           </NavLink>
+          <NavLink to="/course-videos">
+            <FiVideo /> Course Videos
+          </NavLink>
           <a href="/feedback" target="_blank" rel="noopener noreferrer">
             <FiStar /> Student Feedback
           </a>
@@ -164,6 +168,7 @@ function App() {
             <Route path="/student-tracking" element={<StudentTracking />} />
             <Route path="/follow-ups" element={<FollowUpManagement />} />
             <Route path="/whatsapp-send" element={<WhatsAppSend />} />
+            <Route path="/course-videos" element={<CourseVideoDelivery />} />
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/scan" element={<AttendanceScanner />} />
             <Route path="/entry-attendance" element={<EntryAttendance />} />
