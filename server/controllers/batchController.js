@@ -887,7 +887,10 @@ const getStudentAppAttendance = async (req, res) => {
       headers: { "x-api-key": process.env.STUDENT_APP_ATTENDANCE_API_KEY },
     });
     const payload = await response.json();
-    if (!response.ok || !payload.success) {
+    // The Student App's attendance-summary API responds with just
+    // {data: [...]} — no `success` field in its envelope — so HTTP status
+    // alone is what tells us whether the call worked.
+    if (!response.ok) {
       return res.status(502).json({
         success: false,
         message: payload.error || "Failed to reach the Student App's attendance API.",
