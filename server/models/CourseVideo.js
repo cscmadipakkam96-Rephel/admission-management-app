@@ -23,6 +23,13 @@ const CourseVideo = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
+    // Admin-entered, not computed from the file — there's no server-side
+    // video processing (ffprobe etc.) in this app, so this is just what
+    // the admin types in, same as price.
+    duration_minutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
     // Never a public URL — resolved through a fresh presigned GET at
     // preview time (server/utils/s3.js), same convention as ClassRecording.
     s3_key: {

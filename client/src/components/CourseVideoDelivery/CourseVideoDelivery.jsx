@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "bootstrap";
 import API from "../../api/api";
 
-const initialForm = { title: "", price: "" };
+const initialForm = { title: "", price: "", duration_minutes: "" };
 
 function formatDate(value) {
   if (!value) return "-";
@@ -130,6 +130,7 @@ function CourseVideoDelivery() {
       await API.post("/course-videos", {
         title: uploadForm.title.trim(),
         price: uploadForm.price,
+        duration_minutes: uploadForm.duration_minutes,
         s3_key,
         file_size_mb: Math.round((uploadFile.size / (1024 * 1024)) * 100) / 100,
         content_type: uploadFile.type || "application/octet-stream",
@@ -159,7 +160,11 @@ function CourseVideoDelivery() {
 
   const openEditModal = (video) => {
     setEditingVideo(video);
-    setEditForm({ title: video.title, price: video.price });
+    setEditForm({
+      title: video.title,
+      price: video.price,
+      duration_minutes: video.duration_minutes ?? "",
+    });
     setEditErrors({});
     Modal.getOrCreateInstance(editModalRef.current).show();
   };
@@ -187,6 +192,7 @@ function CourseVideoDelivery() {
       await API.put(`/course-videos/${editingVideo.id}`, {
         title: editForm.title.trim(),
         price: editForm.price,
+        duration_minutes: editForm.duration_minutes,
       });
       Modal.getOrCreateInstance(editModalRef.current).hide();
       await fetchVideos();
@@ -276,7 +282,7 @@ function CourseVideoDelivery() {
           </p>
           <form onSubmit={handleUpload}>
             <div className="row g-3 align-items-start">
-              <div className="col-md-4">
+              <div className="col-md-3">
                 <label className="form-label">Course Video Title</label>
                 <input
                   type="text"
@@ -288,7 +294,7 @@ function CourseVideoDelivery() {
                 />
                 {uploadErrors.title && <div className="invalid-feedback">{uploadErrors.title}</div>}
               </div>
-              <div className="col-md-3">
+              <div className="col-md-2">
                 <label className="form-label">Price (₹)</label>
                 <input
                   type="number"
@@ -300,6 +306,21 @@ function CourseVideoDelivery() {
                   disabled={uploading}
                 />
                 {uploadErrors.price && <div className="invalid-feedback">{uploadErrors.price}</div>}
+              </div>
+              <div className="col-md-2">
+                <label className="form-label">Duration (min)</label>
+                <input
+                  type="number"
+                  name="duration_minutes"
+                  min="0"
+                  className={`form-control ${uploadErrors.duration_minutes ? "is-invalid" : ""}`}
+                  value={uploadForm.duration_minutes}
+                  onChange={handleUploadChange}
+                  disabled={uploading}
+                />
+                {uploadErrors.duration_minutes && (
+                  <div className="invalid-feedback">{uploadErrors.duration_minutes}</div>
+                )}
               </div>
               <div className="col-md-3">
                 <label className="form-label">Video File</label>
@@ -345,6 +366,7 @@ function CourseVideoDelivery() {
                   <th>#</th>
                   <th>Title</th>
                   <th>Price</th>
+                  <th>Duration</th>
                   <th>Size</th>
                   <th>Uploaded On</th>
                   <th>Student App Sync</th>
@@ -354,7 +376,7 @@ function CourseVideoDelivery() {
               <tbody>
                 {videos.length === 0 ? (
                   <tr>
-                    <td className="text-center text-muted py-4" colSpan={7}>
+                    <td className="text-center text-muted py-4" colSpan={8}>
                       <i className="bi bi-camera-video fs-3 d-block mb-2"></i>
                       No course videos uploaded yet.
                     </td>
@@ -365,6 +387,7 @@ function CourseVideoDelivery() {
                       <td>{index + 1}</td>
                       <td>{v.title}</td>
                       <td>{formatPrice(v.price)}</td>
+                      <td>{v.duration_minutes ? `${v.duration_minutes} min` : "-"}</td>
                       <td>{v.file_size_mb ? `${v.file_size_mb} MB` : "-"}</td>
                       <td>{formatDate(v.created_at)}</td>
                       <td>
@@ -446,6 +469,20 @@ function CourseVideoDelivery() {
                     onChange={handleEditChange}
                   />
                   {editErrors.price && <div className="invalid-feedback">{editErrors.price}</div>}
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Duration (min)</label>
+                  <input
+                    type="number"
+                    name="duration_minutes"
+                    min="0"
+                    className={`form-control ${editErrors.duration_minutes ? "is-invalid" : ""}`}
+                    value={editForm.duration_minutes}
+                    onChange={handleEditChange}
+                  />
+                  {editErrors.duration_minutes && (
+                    <div className="invalid-feedback">{editErrors.duration_minutes}</div>
+                  )}
                 </div>
                 <div className="text-muted small">
                   The video file itself doesn't change here — only the title and price, which will

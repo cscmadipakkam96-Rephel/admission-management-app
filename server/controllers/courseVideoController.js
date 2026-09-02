@@ -8,11 +8,17 @@ const {
   copyToStudentAppBucketWithMetadata,
 } = require("../utils/s3");
 
-const buildMetadata = (video) => ({
-  title: encodeURIComponent(video.title),
-  price: String(video.price),
-  createdat: new Date(video.created_at || Date.now()).toISOString(),
-});
+const buildMetadata = (video) => {
+  const metadata = {
+    title: encodeURIComponent(video.title),
+    price: String(video.price),
+    createdat: new Date(video.created_at || Date.now()).toISOString(),
+  };
+  if (video.duration_minutes != null) {
+    metadata.durationminutes = String(video.duration_minutes);
+  }
+  return metadata;
+};
 
 // Best-effort fan-out to the Student App's own bucket — same convention as
 // class recordings: a failure here shouldn't block the admin-side request,
@@ -42,6 +48,14 @@ const validatePayload = (body) => {
   }
   if (body.price === undefined || body.price === null || body.price === "" || Number(body.price) < 0) {
     errors.price = "A valid, non-negative price is required.";
+  }
+  if (
+    body.duration_minutes !== undefined &&
+    body.duration_minutes !== null &&
+    body.duration_minutes !== "" &&
+    Number(body.duration_minutes) < 0
+  ) {
+    errors.duration_minutes = "Duration cannot be negative.";
   }
   return errors;
 };
@@ -80,6 +94,7 @@ const createCourseVideo = async (req, res) => {
       admin_id: req.admin?.adminId || null,
       title: req.body.title.toString().trim(),
       price: req.body.price,
+      duration_minutes: req.body.duration_minutes === "" ? null : req.body.duration_minutes,
       s3_key: req.body.s3_key,
       file_size_mb: req.body.file_size_mb || null,
       content_type: req.body.content_type || null,
@@ -127,6 +142,7 @@ const updateCourseVideo = async (req, res) => {
     await video.update({
       title: req.body.title.toString().trim(),
       price: req.body.price,
+      duration_minutes: req.body.duration_minutes === "" ? null : req.body.duration_minutes,
     });
 
     if (video.student_app_s3_key) {
