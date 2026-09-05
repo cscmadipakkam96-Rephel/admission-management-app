@@ -194,6 +194,16 @@ function TeacherRegister() {
   const [batchTopicSuggestions, setBatchTopicSuggestions] = useState({});
   const [batchTopicSuggestionsLoading, setBatchTopicSuggestionsLoading] = useState(false);
   const [expandedSubjectIds, setExpandedSubjectIds] = useState(() => new Set());
+  // Batch Transfer — hand a batch off to another teacher who's free at
+  // its exact section+timing. transferPanelBatchId identifies which
+  // batch's panel is open; candidates come from the server so the
+  // availability check always reflects live data, never stale client state.
+  const [transferPanelBatchId, setTransferPanelBatchId] = useState(null);
+  const [transferCandidates, setTransferCandidates] = useState([]);
+  const [transferCandidatesLoading, setTransferCandidatesLoading] = useState(false);
+  const [transferError, setTransferError] = useState("");
+  const [selectedTransferTeacherId, setSelectedTransferTeacherId] = useState(null);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
   // "Add Past Class" — backfill/edit a session with an explicit date/time
   // instead of the live Start/End Class flow. sessionId null = adding a
   // new missed class; sessionId set = editing that existing entry.
@@ -966,6 +976,48 @@ function TeacherRegister() {
       setBatchProgress(response.data.data);
     } catch {
       // Keep whatever's already on screen if the refresh itself fails.
+    }
+  };
+
+  const openTransferPanel = async (bp) => {
+    setTransferPanelBatchId(bp.id);
+    setSelectedTransferTeacherId(null);
+    setTransferError("");
+    setTransferCandidates([]);
+    setTransferCandidatesLoading(true);
+    try {
+      const response = await API.get(`/teacher-auth/batches/${bp.id}/transfer-candidates`);
+      setTransferCandidates(response.data.data);
+    } catch (err) {
+      setTransferError(
+        err.response?.data?.message || "Failed to load available teachers."
+      );
+    } finally {
+      setTransferCandidatesLoading(false);
+    }
+  };
+
+  const closeTransferPanel = () => {
+    setTransferPanelBatchId(null);
+    setSelectedTransferTeacherId(null);
+    setTransferError("");
+    setTransferCandidates([]);
+  };
+
+  const confirmTransfer = async () => {
+    if (!selectedTransferTeacherId) return;
+    setTransferSubmitting(true);
+    try {
+      await API.post(`/teacher-auth/batches/${transferPanelBatchId}/transfer`, {
+        to_teacher_id: selectedTransferTeacherId,
+      });
+      closeTransferPanel();
+      await refreshBatchProgress();
+      setToast({ variant: "success", message: "Batch transferred successfully." });
+    } catch (err) {
+      setTransferError(err.response?.data?.message || "Failed to transfer batch.");
+    } finally {
+      setTransferSubmitting(false);
     }
   };
 
@@ -2453,6 +2505,12 @@ function TeacherRegister() {
                                   Edited by {bp.last_edited_by_teacher_name}
                                 </div>
                               )}
+                              {bp.transferred_from_teacher_name && (
+                                <div className="text-muted small">
+                                  <i className="bi bi-arrow-left-right me-1"></i>
+                                  Transferred by {bp.transferred_from_teacher_name}
+                                </div>
+                              )}
                               <div className="text-muted small">
                                 <i className="bi bi-clock me-1"></i>
                                 {bp.timing || "No timing set"}
@@ -2498,10 +2556,83 @@ function TeacherRegister() {
                             >
                               <i className="bi bi-pencil"></i> Edit
                             </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-info"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTransferPanel(bp);
+                              }}
+                            >
+                              <i className="bi bi-arrow-left-right"></i> Transfer
+                            </button>
                             <i
                               className={`bi ${isOpen ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}
                             ></i>
                           </div>
+
+                          {transferPanelBatchId === bp.id && (
+                            <div
+                              className="border rounded p-3 mt-2 bg-light"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="fw-semibold small mb-2">
+                                Transfer this batch to another teacher
+                              </div>
+                              {transferCandidatesLoading ? (
+                                <div className="text-muted small">
+                                  Checking available teachers...
+                                </div>
+                              ) : transferError ? (
+                                <div className="text-danger small mb-2">{transferError}</div>
+                              ) : transferCandidates.length === 0 ? (
+                                <div className="text-muted small">
+                                  No other teacher is free at this batch's timing right now.
+                                </div>
+                              ) : (
+                                <div
+                                  className="mb-2"
+                                  style={{ maxHeight: "200px", overflowY: "auto" }}
+                                >
+                                  {transferCandidates.map((t) => (
+                                    <div className="form-check" key={t.id}>
+                                      <input
+                                        className="form-check-input"
+                                        type="radio"
+                                        name={`transfer-${bp.id}`}
+                                        checked={selectedTransferTeacherId === t.id}
+                                        onChange={() => setSelectedTransferTeacherId(t.id)}
+                                      />
+                                      <label className="form-check-label small">
+                                        {t.teacher_name}
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="d-flex gap-2">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-success"
+                                  disabled={
+                                    !selectedTransferTeacherId ||
+                                    transferSubmitting ||
+                                    transferCandidatesLoading
+                                  }
+                                  onClick={confirmTransfer}
+                                >
+                                  {transferSubmitting ? "Transferring..." : "Confirm Transfer"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-secondary"
+                                  onClick={closeTransferPanel}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
 
                           {isOpen && (
                             <div className="mt-3">

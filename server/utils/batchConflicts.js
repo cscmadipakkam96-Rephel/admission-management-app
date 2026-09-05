@@ -1,5 +1,6 @@
 const { Op } = require("sequelize");
 const Batch = require("../models/Batch");
+const Teacher = require("../models/Teacher");
 const { parseTimeRange, rangesOverlap } = require("./timeRange");
 const { sectionsOverlapOnDays } = require("./sections");
 
@@ -44,4 +45,31 @@ const findConflicts = async ({ adminId, section, timing, subjectId, teacherId, e
   return null;
 };
 
-module.exports = { findConflicts };
+// Used by the Batch Transfer flow — same overlap rules as findConflicts,
+// but run against every other teacher for this admin instead of one
+// candidate, so only teachers genuinely free at this exact section+timing
+// are ever offered as a transfer target.
+const getAvailableTeachersForTransfer = async ({ adminId, section, timing, excludeTeacherId }) => {
+  const targetRange = parseTimeRange(timing);
+
+  const [teachers, allBatches] = await Promise.all([
+    Teacher.findAll({
+      where: { admin_id: adminId, active: true, id: { [Op.ne]: excludeTeacherId } },
+      attributes: ["id", "teacher_name"],
+    }),
+    Batch.findAll({ where: { admin_id: adminId, active: true, subject_completed: false } }),
+  ]);
+
+  return teachers.filter((t) => {
+    const teacherBatches = allBatches.filter((b) => b.teacher_id === t.id);
+    const hasClash = teacherBatches.some((b) => {
+      if (!sectionsOverlapOnDays(b.section, section)) return false;
+      const existingRange = parseTimeRange(b.timing);
+      if (!existingRange || !targetRange) return false;
+      return rangesOverlap(targetRange, existingRange);
+    });
+    return !hasClash;
+  });
+};
+
+module.exports = { findConflicts, getAvailableTeachersForTransfer };

@@ -32,6 +32,8 @@ const {
   createOwnBatch,
   updateOwnBatch,
   deleteOwnBatch,
+  getTransferCandidates,
+  transferBatch,
 } = require("../controllers/teacherAuthController");
 const requireTeacherAuth = require("../middleware/teacherAuth");
 
@@ -84,6 +86,8 @@ router.get("/batches/subject-students", requireTeacherAuth, getTeacherSubjectStu
 router.post("/batches", requireTeacherAuth, createOwnBatch);
 router.put("/batches/:id", requireTeacherAuth, updateOwnBatch);
 router.delete("/batches/:id", requireTeacherAuth, deleteOwnBatch);
+router.get("/batches/:id/transfer-candidates", requireTeacherAuth, getTransferCandidates);
+router.post("/batches/:id/transfer", requireTeacherAuth, transferBatch);
 
 // General Teacher Login (email + password, cookie session)
 router.post("/login", login);

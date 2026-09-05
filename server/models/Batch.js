@@ -83,6 +83,20 @@ const Batch = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // Set when a teacher hands this batch off to another teacher via the
+    // Transfer flow — teacher_id itself becomes the new (receiving)
+    // teacher, so this column is the only record of who it came from.
+    // Plain FK-shaped column, no association call — same reasoning as
+    // last_edited_by_teacher_id above.
+    transferred_from_teacher_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: Teacher, key: "id" },
+    },
+    transferred_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: "batches",

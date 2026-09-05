@@ -1065,6 +1065,12 @@ function GroupManagement() {
                                 Edited by {b.last_edited_by_teacher_name}
                               </div>
                             )}
+                            {b.transferred_from_teacher_name && (
+                              <div className="text-muted small mt-1">
+                                <i className="bi bi-arrow-left-right me-1"></i>
+                                Transferred by {b.transferred_from_teacher_name} to {b.Teacher?.teacher_name}
+                              </div>
+                            )}
 
                             {b.Substitutions?.[0] ? (
                               <div className="alert alert-warning py-1 px-2 mt-1 mb-1 small">

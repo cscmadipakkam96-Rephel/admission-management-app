@@ -18,7 +18,7 @@ const { getRoomSlug, signJitsiToken } = require("../utils/jitsiToken");
 const { getUploadUrl, getPlaybackUrl, copyToStudentAppBucket } = require("../utils/s3");
 const { markAttendanceForAdmission } = require("./attendanceController");
 const { isSectionActiveToday, SECTION_LABELS, VALID_SECTIONS } = require("../utils/sections");
-const { findConflicts } = require("../utils/batchConflicts");
+const { findConflicts, getAvailableTeachersForTransfer } = require("../utils/batchConflicts");
 const { coursesForSubject, includeOptionsFor } = require("./batchController");
 
 // Which of a batch's students already got credit for `topic` before today
@@ -1253,7 +1253,13 @@ const getBatchProgress = async (req, res) => {
     // Manual lookup rather than a Sequelize include — Batch already has
     // other associations declared against it, and one more previously
     // broke sync({alter:true}) (see the model's own comment).
-    const editorIds = [...new Set(batches.map((b) => b.last_edited_by_teacher_id).filter(Boolean))];
+    const editorIds = [
+      ...new Set(
+        batches
+          .flatMap((b) => [b.last_edited_by_teacher_id, b.transferred_from_teacher_id])
+          .filter(Boolean)
+      ),
+    ];
     const editors = editorIds.length
       ? await Teacher.findAll({ where: { id: editorIds }, attributes: ["id", "teacher_name"] })
       : [];
@@ -1317,6 +1323,9 @@ const getBatchProgress = async (req, res) => {
         last_edited_by_teacher_id: b.last_edited_by_teacher_id,
         last_edited_by_teacher_name: editorNameById.get(b.last_edited_by_teacher_id) || null,
         last_edited_at: b.last_edited_at,
+        transferred_from_teacher_id: b.transferred_from_teacher_id,
+        transferred_from_teacher_name: editorNameById.get(b.transferred_from_teacher_id) || null,
+        transferred_at: b.transferred_at,
       };
     });
 
@@ -1778,6 +1787,82 @@ const updateOwnBatch = async (req, res) => {
   }
 };
 
+// Lists every other teacher (same admin, active) who has no batch of
+// their own overlapping this batch's section+timing — the only people a
+// teacher is allowed to hand this batch off to.
+const getTransferCandidates = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = await Batch.findOne({
+      where: { id, admin_id: req.teacher.admin_id, teacher_id: req.teacher.teacherId, active: true },
+    });
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found, or you don't have permission to transfer it.",
+      });
+    }
+
+    const candidates = await getAvailableTeachersForTransfer({
+      adminId: req.teacher.admin_id,
+      section: batch.section,
+      timing: batch.timing,
+      excludeTeacherId: req.teacher.teacherId,
+    });
+
+    res.status(200).json({ success: true, data: candidates });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Hands the batch off to another teacher. Re-checks availability at
+// confirm time (not just trusting the earlier candidates list) so a
+// second, unrelated batch created in between can't cause a double-booking.
+const transferBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { to_teacher_id } = req.body;
+    if (!to_teacher_id) {
+      return res.status(400).json({ success: false, message: "to_teacher_id is required." });
+    }
+
+    const batch = await Batch.findOne({
+      where: { id, admin_id: req.teacher.admin_id, teacher_id: req.teacher.teacherId, active: true },
+    });
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found, or you don't have permission to transfer it.",
+      });
+    }
+
+    const candidates = await getAvailableTeachersForTransfer({
+      adminId: req.teacher.admin_id,
+      section: batch.section,
+      timing: batch.timing,
+      excludeTeacherId: req.teacher.teacherId,
+    });
+    const isStillAvailable = candidates.some((t) => t.id === Number(to_teacher_id));
+    if (!isStillAvailable) {
+      return res.status(409).json({
+        success: false,
+        message: "That teacher is no longer free at this batch's timing — pick someone else.",
+      });
+    }
+
+    await batch.update({
+      teacher_id: to_teacher_id,
+      transferred_from_teacher_id: req.teacher.teacherId,
+      transferred_at: new Date(),
+    });
+
+    res.status(200).json({ success: true, message: "Batch transferred successfully." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const deleteOwnBatch = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1835,4 +1920,6 @@ module.exports = {
   createOwnBatch,
   updateOwnBatch,
   deleteOwnBatch,
+  getTransferCandidates,
+  transferBatch,
 };
