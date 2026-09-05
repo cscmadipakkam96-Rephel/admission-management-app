@@ -1877,6 +1877,7 @@ function TeacherRegister() {
               )}
               */}
 
+              {/* My Batches Today — commented out, not deleted; re-enable if needed later.
               {dashboard.todayBatches?.length > 0 && (
                 <div className="card shadow-sm mb-4">
                   <div className="card-body">
@@ -2319,6 +2320,7 @@ function TeacherRegister() {
                   </div>
                 </div>
               )}
+              */}
 
               {/* My Weekly Batch Schedule — commented out, not deleted; re-enable if needed later.
               <div className="card shadow-sm mb-4">
@@ -2551,7 +2553,7 @@ function TeacherRegister() {
                                     }}
                                   >
                                     <i className="bi bi-clock-history me-1"></i>
-                                    Add Past Class
+                                    Add Class
                                   </button>
                                 )}
                               </div>
@@ -2966,6 +2968,7 @@ function TeacherRegister() {
                 </div>
               )}
 
+              {/* My Courses — Syllabus — commented out, not deleted; re-enable if needed later.
               <div className="card shadow-sm mb-4">
                 <div className="card-body">
                   <h5 className="mb-3">My Courses — Syllabus</h5>
@@ -3064,6 +3067,7 @@ function TeacherRegister() {
                   )}
                 </div>
               </div>
+              */}
             </>
           )
         )}
